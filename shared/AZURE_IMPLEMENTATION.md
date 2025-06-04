@@ -149,5 +149,3 @@ export async function sendNotification(payload) {
 - [Azure Notification Hubs Guide](https://docs.microsoft.com/azure/notification-hubs/)
 
 ---
-
-**Need help with backend setup or sample code? Let us know!**
