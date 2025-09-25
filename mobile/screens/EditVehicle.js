@@ -2,7 +2,7 @@
 // File: mobile/screens/EditVehicle.js
 import React, { useState, useEffect } from 'react';
 import { View, TextInput, Button, Alert } from 'react-native';
-import { db, auth } from '../../shared/firebaseConfig';
+import { db, auth } from '../../shared/firestoreClient';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 
 export default function EditVehicle({ route, navigation }) {
@@ -49,6 +49,8 @@ export default function EditVehicle({ route, navigation }) {
         />
       ))}
       <Button title="Save Changes" onPress={handleUpdate} />
+      <View style={{ height: 12 }} />
+      <Button title="View Maintenance" onPress={() => navigation.navigate('MaintenanceList', { vin })} />
     </View>
   );
 }

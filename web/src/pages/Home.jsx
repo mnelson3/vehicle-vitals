@@ -2,19 +2,16 @@
 // File: web/pages/Home.jsx
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { db, auth } from '../../shared/firebaseConfig';
-import { collection, getDocs } from 'firebase/firestore';
+import { getVehicles } from '../shared/firestoreService';
+import AdBanner from '../components/AdBanner';
 
 export default function Home() {
   const [vehicles, setVehicles] = useState([]);
 
   useEffect(() => {
     const fetchVehicles = async () => {
-      const userId = auth.currentUser?.uid;
-      if (!userId) return;
-      const ref = collection(db, `users/${userId}/vehicles`);
-      const snap = await getDocs(ref);
-      setVehicles(snap.docs.map((doc) => doc.data()));
+      const list = await getVehicles();
+      setVehicles(list);
     };
     fetchVehicles();
   }, []);
@@ -25,6 +22,7 @@ export default function Home() {
       <Link to="/add-vehicle">
         <button style={{ marginTop: 20 }}>Add Vehicle</button>
       </Link>
+      <AdBanner />
       <ul style={{ marginTop: 20 }}>
         {vehicles.map((vehicle) => (
           <li key={vehicle.vin}>

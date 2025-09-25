@@ -2,7 +2,7 @@
 // File: mobile/screens/Home.js
 import React, { useEffect, useState } from 'react';
 import { View, Text, Button, FlatList, TouchableOpacity } from 'react-native';
-import { db, auth } from '../../shared/firebaseConfig';
+import { db, auth } from '../../shared/firestoreClient';
 import { collection, getDocs } from 'firebase/firestore';
 
 export default function Home({ navigation }) {

@@ -1,6 +1,6 @@
 // -----------------------------
 // File: web/src/utils/vehicleService.js
-import { db, auth } from '../../../shared/firebaseConfig';
+import { db, auth } from '../shared/firebaseConfig';
 import { doc, setDoc } from 'firebase/firestore';
 
 export async function fetchVehicleByVINAndSave(vin) {

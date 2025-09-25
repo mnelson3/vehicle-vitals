@@ -1,0 +1,70 @@
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-lock.yaml
+
+# Build outputs
+dist/
+build/
+web/dist/
+web/build/
+
+# Vite cache
+.vite/
+
+# Env files
+.env
+.env.local
+.env.*.local
+
+# macOS
+.DS_Store
+
+# Editor directories and files
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# Logs
+*.log
+
+# React Native
+android/
+ios/
+*.keystore
+*.jks
+android/.gradle/
+android/app/build/
+android/build/
+ios/Pods/
+ios/build/
+
+# Expo leftover (local)
+mobile/app.json
+mobile/.expo/
+
+# Xcode
+*.xcworkspace
+*.xcuserdata
+*.xcodeproj/project.xcworkspace/
+
+# Fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/
+
+# Metro cache
+.metro-cache/
+
+# Gradle
+.gradle/
+
+# Firebase service account keys
+serviceAccountKey.json
+
+# Misc
+Thumbs.db
+coverage/
