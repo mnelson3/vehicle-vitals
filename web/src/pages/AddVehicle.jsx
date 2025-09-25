@@ -2,9 +2,9 @@
 // File: web/pages/AddVehicle.jsx
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { db, auth } from '../../shared/firebaseConfig';
-import { doc, setDoc } from 'firebase/firestore';
-import { defaultVehicle } from '../../shared/types';
+import { addOrUpdateVehicle } from '../shared/firestoreService';
+import AdBanner from '../components/AdBanner';
+import { defaultVehicle } from '../../../shared/types';
 
 export default function AddVehicle() {
   const [form, setForm] = useState({ ...defaultVehicle });
@@ -17,10 +17,7 @@ export default function AddVehicle() {
 
   const handleSubmit = async () => {
     try {
-      const userId = auth.currentUser?.uid;
-      if (!userId) throw new Error('Not authenticated');
-      const ref = doc(db, `users/${userId}/vehicles/${form.vin}`);
-      await setDoc(ref, form);
+      await addOrUpdateVehicle(form);
       alert('Vehicle added successfully');
       navigate('/');
     } catch (err) {
@@ -44,6 +41,9 @@ export default function AddVehicle() {
         </div>
       ))}
       <button onClick={handleSubmit}>Add Vehicle</button>
+      <div style={{ marginTop: 18 }}>
+        <AdBanner />
+      </div>
     </div>
   );
 }

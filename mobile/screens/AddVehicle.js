@@ -2,7 +2,7 @@
 // File: mobile/screens/AddVehicle.js
 import React, { useState } from 'react';
 import { View, TextInput, Button, Alert } from 'react-native';
-import { db, auth } from '../../shared/firebaseConfig';
+import { db, auth } from '../../shared/firestoreClient';
 import { doc, setDoc } from 'firebase/firestore';
 import { defaultVehicle } from '../../shared/types';
 
