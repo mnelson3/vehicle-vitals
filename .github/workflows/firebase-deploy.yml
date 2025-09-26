@@ -30,8 +30,8 @@ jobs:
 
       - name: Deploy to Firebase Hosting
         env:
-          FIREBASE_TOKEN: ${{1//017DVLq6BDBBlCgYIARAAGAESNwF-L9IrBFHVzb5fgCHB8sN0SH1DbMGp3GVvn2YBof-vvMyqsiu4UAqhs61x_D1_zATjAM81Mqk}}
-          FIREBASE_PROJECT: ${{vehicle-vitals-a8eb2}}
+          FIREBASE_TOKEN: ${1//017DVLq6BDBBlCgYIARAAGAESNwF-L9IrBFHVzb5fgCHB8sN0SH1DbMGp3GVvn2YBof-vvMyqsiu4UAqhs61x_D1_zATjAM81Mqk}
+          FIREBASE_PROJECT: ${vehicle-vitals-a8eb2}
         run: |
           # Ensure build exists
           cd web
