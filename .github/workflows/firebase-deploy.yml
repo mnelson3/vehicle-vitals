@@ -1,0 +1,40 @@
+name: CI — Build and Deploy to Firebase Hosting
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js 18
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Install dependencies
+        run: |
+          cd web
+          npm ci
+
+      - name: Build web
+        run: |
+          cd web
+          npm run build
+
+      - name: Install Firebase CLI
+        run: npm install -g firebase-tools@11
+
+      - name: Deploy to Firebase Hosting
+        env:
+          FIREBASE_TOKEN: ${{1//017DVLq6BDBBlCgYIARAAGAESNwF-L9IrBFHVzb5fgCHB8sN0SH1DbMGp3GVvn2YBof-vvMyqsiu4UAqhs61x_D1_zATjAM81Mqk}}
+          FIREBASE_PROJECT: ${{vehicle-vitals-a8eb2}}
+        run: |
+          # Ensure build exists
+          cd web
+          ls -la dist
+          # Deploy only hosting for the configured project
+          firebase deploy --project "$FIREBASE_PROJECT" --token "$FIREBASE_TOKEN" --only hosting
