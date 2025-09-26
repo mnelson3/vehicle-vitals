@@ -1,7 +1,5 @@
 {
   "projects": {
-    "default": "vehicle-vitals-a8eb2"
-  },
-  "targets": {},
-  "etags": {}
+    "default": "vehicle-vitals-prod"
+  }
 }
