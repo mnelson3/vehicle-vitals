@@ -2,6 +2,8 @@ import React from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './App'
 import './styles.css'
+// Dev-only: auto anonymous sign-in to enable local Firestore writes
+import './shared/devAuth'
 
 const container = document.getElementById('root')
 const root = createRoot(container)

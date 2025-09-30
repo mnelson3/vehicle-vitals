@@ -9,6 +9,11 @@ import EditVehicle from './screens/EditVehicle';
 import ScanVIN from './screens/ScanVIN';
 import MaintenanceList from './screens/MaintenanceList';
 import MaintenanceDetail from './screens/MaintenanceDetail';
+import Instructions from './screens/Instructions';
+import Login from './screens/Login';
+import Terms from './screens/Terms';
+import Privacy from './screens/Privacy';
+import Contact from './screens/Contact';
 
 const Stack = createNativeStackNavigator();
 
@@ -22,6 +27,11 @@ export default function App() {
         <Stack.Screen name="ScanVIN" component={ScanVIN} />
         <Stack.Screen name="MaintenanceList" component={MaintenanceList} />
   <Stack.Screen name="MaintenanceDetail" component={MaintenanceDetail} />
+        <Stack.Screen name="Instructions" component={Instructions} />
+        <Stack.Screen name="Login" component={Login} />
+        <Stack.Screen name="Terms" component={Terms} />
+        <Stack.Screen name="Privacy" component={Privacy} />
+        <Stack.Screen name="Contact" component={Contact} />
       </Stack.Navigator>
     </NavigationContainer>
   );

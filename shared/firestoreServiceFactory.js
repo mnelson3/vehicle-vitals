@@ -3,6 +3,13 @@
 export function createFirestoreService({ db, auth, helpers }) {
   const { collection, doc, setDoc, getDocs, getDoc, addDoc, updateDoc, deleteDoc, serverTimestamp } = helpers;
 
+  // Small utility to stamp created/updated times consistently
+  function withTimestamps(data, { create = false } = {}) {
+    const stamp = { updatedAt: serverTimestamp() };
+    if (create) stamp.createdAt = serverTimestamp();
+    return { ...data, ...stamp };
+  }
+
   function vehiclesCollectionRef(userId) {
     return collection(db, `users/${userId}/vehicles`);
   }
@@ -11,7 +18,7 @@ export function createFirestoreService({ db, auth, helpers }) {
     const userId = auth.currentUser?.uid;
     if (!userId) throw new Error('Not authenticated');
     const ref = doc(db, `users/${userId}/vehicles/${vehicle.vin}`);
-    await setDoc(ref, { ...vehicle, updatedAt: serverTimestamp() });
+    await setDoc(ref, withTimestamps({ ...vehicle }));
     return vehicle;
   }
 
@@ -35,7 +42,7 @@ export function createFirestoreService({ db, auth, helpers }) {
     const userId = auth.currentUser?.uid;
     if (!userId) throw new Error('Not authenticated');
     const collRef = collection(db, `users/${userId}/vehicles/${vin}/maintenance`);
-    const docRef = await addDoc(collRef, { ...entry, createdAt: serverTimestamp() });
+    const docRef = await addDoc(collRef, withTimestamps(entry, { create: true }));
     return { id: docRef.id, ...entry };
   }
 
@@ -59,7 +66,7 @@ export function createFirestoreService({ db, auth, helpers }) {
     const userId = auth.currentUser?.uid;
     if (!userId) throw new Error('Not authenticated');
     const ref = doc(db, `users/${userId}/vehicles/${vin}/maintenance/${entryId}`);
-    await updateDoc(ref, { ...updates, updatedAt: serverTimestamp() });
+    await updateDoc(ref, withTimestamps(updates));
   }
 
   async function deleteMaintenanceEntry(vin, entryId) {
@@ -73,7 +80,42 @@ export function createFirestoreService({ db, auth, helpers }) {
     const userId = auth.currentUser?.uid;
     if (!userId) throw new Error('Not authenticated');
     const ref = doc(db, `users/${userId}/vehicles/${vin}`);
-    await updateDoc(ref, { ...updates, updatedAt: serverTimestamp() });
+    await updateDoc(ref, withTimestamps(updates));
+  }
+
+  // --- Reminder stubs (no-op implementations for now) ---
+  // Suggested path when implemented: `users/${userId}/vehicles/${vin}/reminders/*`
+  async function addReminder(vin, reminder) {
+    const userId = auth.currentUser?.uid;
+    if (!userId) throw new Error('Not authenticated');
+    // no-op stub: return the provided reminder shape (no Firestore write yet)
+    return { id: null, ...reminder };
+  }
+
+  async function getReminders(vin) {
+    const userId = auth.currentUser?.uid;
+    if (!userId) return [];
+    // no-op stub: return empty list for now
+    return [];
+  }
+
+  async function completeReminder(vin, reminderId) {
+    const userId = auth.currentUser?.uid;
+    if (!userId) throw new Error('Not authenticated');
+    // no-op stub
+  }
+
+  async function snoozeReminder(vin, reminderId, untilDateISO) {
+    const userId = auth.currentUser?.uid;
+    if (!userId) throw new Error('Not authenticated');
+    // no-op stub
+  }
+
+  async function deleteVehicle(vin) {
+    const userId = auth.currentUser?.uid;
+    if (!userId) throw new Error('Not authenticated');
+    const ref = doc(db, `users/${userId}/vehicles/${vin}`);
+    await deleteDoc(ref);
   }
 
   return {
@@ -86,5 +128,11 @@ export function createFirestoreService({ db, auth, helpers }) {
     updateMaintenanceEntry,
     deleteMaintenanceEntry,
     updateVehicle,
+    deleteVehicle,
+    // reminder stubs
+    addReminder,
+    getReminders,
+    completeReminder,
+    snoozeReminder,
   };
 }

@@ -21,4 +21,10 @@ export const {
   updateMaintenanceEntry,
   deleteMaintenanceEntry,
   updateVehicle,
+  deleteVehicle,
+  // reminder stubs
+  addReminder,
+  getReminders,
+  completeReminder,
+  snoozeReminder,
 } = service;
