@@ -1,40 +1,48 @@
 <!--
-Guidance for AI coding assistants working on the Vehicle Vitals repo.
-Keep this file concise (20–50 lines). Only include repository-discoverable facts.
+Concise guidance for automated coding agents working on Vehicle Vitals.
+Only include repository-discoverable facts and file pointers; keep edits minimal and follow existing patterns.
 -->
+
 # Vehicle Vitals — Copilot instructions
 
-This repository contains two frontends (web and mobile) that share small utility/config code under `shared/` and use Firebase for auth and Firestore storage. Use the notes below to make focused, repo-aware code changes.
+Two frontends (web + mobile) share Firebase-backed utilities in `shared/`. Stick to the established data paths and auth checks.
 
-- High-level architecture
-  - Web: React + react-router. Entry points: `App.jsx` (web root uses `web/src/pages/*`). Example: `web/src/pages/Home.jsx` reads Firestore using `db` from `shared/firebaseConfig.js`.
-  - Mobile: React Native + React Navigation. Entry: `mobile/App.js` with stack screens in `mobile/screens/*.js` (`Home`, `AddVehicle`, `EditVehicle`, `ScanVIN`).
-  - Shared: `shared/firebaseConfig.js`, `shared/azureConfig.js`, and `shared/types.js` contain cross-cutting config and simple helpers used by both apps.
+- Architecture (big picture)
+  - Web: React + Vite + react-router. Entry: `web/src/main.jsx` → `web/src/App.jsx`. Pages in `web/src/pages/*` (Home, AddVehicle, EditVehicle).
+  - Mobile: React Native + React Navigation. Entry: `mobile/App.js`. Screens in `mobile/screens/*.js` (Home, AddVehicle, EditVehicle, ScanVIN, Maintenance*).
+  - Shared: `shared/*` holds Firebase config, a Firestore service factory, and types reused by both apps.
 
-- Important conventions & patterns
-  - Firebase-first: auth state is read from `auth.currentUser` (see `web/src/pages/Home.jsx` and `web/src/utils/vehicleService.js`). When adding or reading user data, use the path `users/${userId}/vehicles` in Firestore.
-  - VIN lookup: VIN decoding is done against the NHTSA VPIC API inside `web/src/utils/vehicleService.js`. The function `fetchVehicleByVINAndSave(vin)` both fetches the decoded VIN fields and persists a document keyed by VIN.
-  - Minimal typed objects: `shared/types.js` exports `defaultVehicle` as the project’s vehicle shape — follow that shape when creating or updating vehicle objects.
+- Data model and Firestore paths
+  - Vehicles keyed by VIN under: `users/${userId}/vehicles/${vin}`.
+  - Vehicle fields follow `shared/types.js` `defaultVehicle` (make, model, year, vin, mileage, services).
+  - Maintenance entries live in a subcollection: `users/${userId}/vehicles/${vin}/maintenance/*` with `createdAt/updatedAt` via `serverTimestamp()`.
+  - Auth pattern: read helpers return `[]` or `null` when unauthenticated; write helpers throw (`Not authenticated`). See `shared/firestoreServiceFactory.js`.
 
-- Build / run / debug notes (what worked or is expected)
-  - Web: standard React dev server on port 3000. Look for `package.json` scripts (not present in this file set, infer typical commands: `npm start`, `npm run build`). Verify before editing by checking `package.json` locally.
-  - Mobile: React Native app with screens wired in `mobile/App.js`. Use the normal RN tooling (`npx react-native run-ios` / `run-android`) if the project has RN scripts; otherwise inspect `mobile/package.json`.
+- Firebase initialization patterns (platform-specific)
+  - Web utilities sometimes import `auth/db` directly from `web/src/shared/firebaseConfig.js` (e.g., `web/src/utils/vehicleService.js`).
+  - Web pages import service methods from `web/src/shared/firestoreService.js` which builds a service via `shared/firestoreServiceFactory.js` and `shared/firebaseConfig.js`.
+  - Mobile uses `shared/firestoreClient.js` to initialize and expose `auth`, `db`, and a factory-built `firestoreService`.
+  - Keep these boundaries: don’t import web-only modules into mobile; `shared/firebaseConfig.js` guards `import.meta.env` vs `process.env`.
 
-- Integration & external dependencies
-  - Firebase: init in `shared/firebaseConfig.js`. Replace the placeholder keys with real project creds in environment variables or platform-specific config. Firestore reads/writes use modular SDK (`doc`, `setDoc`, `collection`, `getDocs`).
-  - Azure: `shared/azureConfig.js` contains an MSAL instance and example helper functions that call backend endpoints (`/api/data`, `/api/notify`). Treat these as placeholders — update only if there is an actual backend.
-  - Third-party API: NHTSA VPIC endpoint used for VIN decoding.
+- Key workflows (concrete commands)
+  - Web: `web/package.json` scripts — `npm run dev`, `npm run build`, `npm run preview`, `npm run test` (Vitest). From repo root: use `--prefix web` if needed.
+  - Mobile: `mobile/package.json` scripts — `npm run start`, `npm run ios`, `npm run android` (requires RN toolchain). `ScanVIN` uses `expo-barcode-scanner`.
+  - Tests: `web/tests/firestoreService.test.js` uses Vitest + `@firebase/rules-unit-testing`, mocking `shared/firebaseConfig` to point to a test db.
 
-- When editing code, follow these concrete rules
-  - Preserve the Firestore document path convention `users/${userId}/vehicles/${vin}`.
-  - Prefer using `shared/types.js` `defaultVehicle` shape when creating vehicle objects.
-  - For new backend calls referencing `/api/*`, check `shared/azureConfig.js` first to see if the helper exists.
-  - Avoid changing auth assumptions: many components reference `auth.currentUser?.uid`; introduce alternate auth flows only if you update all places that read `auth`.
+- Integration points
+  - VIN decode: `web/src/utils/vehicleService.js` `fetchVehicleByVINAndSave(vin)` calls NHTSA VPIC and persists to `users/${uid}/vehicles/${vin}`.
+  - Azure placeholders: `shared/azureConfig.js` provides MSAL config and example `/api/*` helpers; treat as non-functional until a backend exists.
 
-- Helpful file references (examples to open first)
-  - `web/src/pages/Home.jsx` — Firestore list + router links
-  - `web/src/utils/vehicleService.js` — VIN lookup + setDoc example
-  - `mobile/App.js` and `mobile/screens/*` — navigation and screen patterns
-  - `shared/firebaseConfig.js`, `shared/azureConfig.js`, `shared/types.js` — shared config and shapes
+- Editing rules (project-specific)
+  - Preserve document paths and VIN-as-id convention for vehicles and maintenance.
+  - Always use `defaultVehicle` when constructing new vehicles.
+  - Gate all Firestore writes on `auth.currentUser?.uid`; follow the read-vs-write unauth behavior from the factory.
+  - Avoid importing messaging/web-only Firebase into native bundles.
 
-If anything here is unclear or you need additional project rules (linting, exact npm scripts, CI), tell me which area and I will inspect package.json, CI configs, and any existing `.github` docs to update or expand this file.
+- Files to open first
+  - `web/src/pages/Home.jsx` — shows `getVehicles`/`deleteVehicle` usage.
+  - `web/src/pages/AddVehicle.jsx` — uses `defaultVehicle` + `addOrUpdateVehicle`.
+  - `web/src/pages/EditVehicle.jsx` — updates vehicle + maintenance list via factory helpers.
+  - `shared/firestoreServiceFactory.js`, `shared/firestoreClient.js`, `web/src/shared/firestoreService.js` — service wiring patterns.
+
+If anything is unclear (e.g., which Firebase config to import in a new module), ask and I’ll inspect callers to clarify or consolidate.

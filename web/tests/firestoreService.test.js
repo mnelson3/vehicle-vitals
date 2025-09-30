@@ -36,7 +36,7 @@ afterAll(async () => {
 });
 
 describe('firestoreService (emulator) maintenance helpers', () => {
-  it('can add, get, update and delete a maintenance entry', async () => {
+  it('can add, get, update and delete a maintenance entry and stamps timestamps', async () => {
     if (!emulatorAvailable) {
       console.warn('Skipping emulator-dependent test');
       return;
@@ -45,7 +45,7 @@ describe('firestoreService (emulator) maintenance helpers', () => {
     const vin = 'TESTVIN123';
 
     // add
-    const created = await service.addMaintenanceEntry(vin, { title: 'Oil', notes: 'Change oil', cost: 29.99 });
+  const created = await service.addMaintenanceEntry(vin, { title: 'Oil', notes: 'Change oil', cost: 29.99 });
     expect(created).toHaveProperty('id');
     expect(created.title).toBe('Oil');
 
@@ -53,15 +53,19 @@ describe('firestoreService (emulator) maintenance helpers', () => {
     const list = await service.getMaintenanceEntries(vin);
     expect(list.length).toBeGreaterThanOrEqual(1);
 
-    const fetched = await service.getMaintenanceEntry(vin, created.id);
+  const fetched = await service.getMaintenanceEntry(vin, created.id);
     expect(fetched).not.toBeNull();
     expect(fetched.title).toBe('Oil');
+  // createdAt should exist after creation (serverTimestamp placeholder in emulator becomes a Timestamp)
+  expect(fetched).toHaveProperty('createdAt');
 
     // update
-    await service.updateMaintenanceEntry(vin, created.id, { title: 'Oil Change', cost: 35 });
-    const updated = await service.getMaintenanceEntry(vin, created.id);
+  await service.updateMaintenanceEntry(vin, created.id, { title: 'Oil Change', cost: 35 });
+  const updated = await service.getMaintenanceEntry(vin, created.id);
     expect(updated.title).toBe('Oil Change');
     expect(updated.cost).toBe(35);
+  // updatedAt should exist after update
+  expect(updated).toHaveProperty('updatedAt');
 
     // delete
     await service.deleteMaintenanceEntry(vin, created.id);

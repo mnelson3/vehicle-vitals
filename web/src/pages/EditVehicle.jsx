@@ -2,14 +2,16 @@
 // File: web/pages/EditVehicle.jsx
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { getVehicle, updateVehicle } from '../shared/firestoreService';
+import { getVehicle, updateVehicle, getMaintenanceEntries, addMaintenanceEntry, deleteVehicle } from '../shared/firestoreService';
 import AdBanner from '../components/AdBanner';
-import { getMaintenanceEntries, addMaintenanceEntry } from '../shared/firestoreService';
+import useVehicleOptions from '../hooks/useVehicleOptions';
+import { decodeVin } from '../utils/vehicleService';
 
 export default function EditVehicle() {
   const { vin } = useParams();
   const navigate = useNavigate();
   const [form, setForm] = useState(null);
+  const { years, makes, models, loadingMakes, loadingModels } = useVehicleOptions({ year: form?.year, make: form?.make });
 
   useEffect(() => {
     const fetchVehicle = async () => {
@@ -35,12 +37,84 @@ export default function EditVehicle() {
     }
   };
 
+  const handleDecodeVin = async () => {
+    const v = (form.vin || '').trim();
+    if (!v) {
+      alert('Enter a VIN first');
+      return;
+    }
+    try {
+      const { make, model, year } = await decodeVin(v);
+      setForm((prev) => ({
+        ...prev,
+        make: make || prev.make,
+        model: model || prev.model,
+        year: year || prev.year,
+      }));
+    } catch (e) {
+      alert(e?.message || 'Failed to decode VIN');
+    }
+  };
+
+  const handleDelete = async () => {
+    const ok = window.confirm('Delete this vehicle? This will remove all vehicle data.');
+    if (!ok) return;
+    try {
+      // deleteVehicle imported from shared service
+      await deleteVehicle(vin);
+      alert('Vehicle deleted');
+      navigate('/');
+    } catch (err) {
+      alert('Error deleting: ' + err.message);
+    }
+  };
+
   if (!form) return <p>Loading...</p>;
 
   return (
     <div style={{ padding: 20 }}>
       <h2>Edit Vehicle</h2>
-      {['make', 'model', 'year', 'vin', 'mileage'].map((field) => (
+      {/* Year dropdown */}
+      <div style={{ marginBottom: 12 }}>
+        <select name="year" value={form.year} onChange={handleChange} style={{ padding: 8, width: '100%' }}>
+          <option value="">Select Year</option>
+          {form.year && !years.includes(String(form.year)) && (
+            <option value={form.year}>Current: {form.year}</option>
+          )}
+          {years.map((y) => (
+            <option key={y} value={y}>{y}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Make dropdown */}
+      <div style={{ marginBottom: 12 }}>
+        <select name="make" value={form.make} onChange={handleChange} style={{ padding: 8, width: '100%' }} disabled={loadingMakes}>
+          <option value="">{loadingMakes ? 'Loading makes…' : 'Select Make'}</option>
+          {form.make && !makes.includes(form.make) && (
+            <option value={form.make}>Current: {form.make}</option>
+          )}
+          {makes.map((m) => (
+            <option key={m} value={m}>{m}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Model dropdown depends on year+make */}
+      <div style={{ marginBottom: 12 }}>
+        <select name="model" value={form.model} onChange={handleChange} style={{ padding: 8, width: '100%' }} disabled={!form.year || !form.make || loadingModels}>
+          <option value="">{loadingModels ? 'Loading models…' : (!form.year || !form.make ? 'Select year & make first' : 'Select Model')}</option>
+          {form.model && !models.includes(form.model) && (
+            <option value={form.model}>Current: {form.model}</option>
+          )}
+          {models.map((m) => (
+            <option key={m} value={m}>{m}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* VIN and mileage text inputs */}
+      {['vin', 'mileage'].map((field) => (
         <div key={field} style={{ marginBottom: 12 }}>
           <input
             type="text"
@@ -50,9 +124,28 @@ export default function EditVehicle() {
             placeholder={field.charAt(0).toUpperCase() + field.slice(1)}
             style={{ padding: 8, width: '100%' }}
           />
+          {field === 'vin' && (
+            <div style={{ fontSize: 12, color: '#666', marginTop: 4 }}>
+              Decode VIN uses the NHTSA VPIC database to prefill Year, Make, and Model. Changes aren’t saved until you click Save Changes.
+            </div>
+          )}
         </div>
       ))}
+      <div style={{ marginBottom: 12 }}>
+        <button type="button" onClick={handleDecodeVin}>Decode VIN</button>
+      </div>
+      <div style={{ marginBottom: 12 }}>
+        <input
+          type="date"
+          name="purchaseDate"
+          value={form.purchaseDate || ''}
+          onChange={handleChange}
+          placeholder="Purchase Date"
+          style={{ padding: 8, width: '100%' }}
+        />
+      </div>
       <button onClick={handleUpdate}>Save Changes</button>
+  <button onClick={handleDelete} style={{ marginLeft: 12, background: '#fcc' }}>Delete Vehicle</button>
       <div style={{ marginTop: 18 }}>
         <AdBanner />
       </div>

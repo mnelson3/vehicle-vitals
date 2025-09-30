@@ -29,3 +29,25 @@ export async function fetchVehicleByVINAndSave(vin) {
     return null;
   }
 }
+
+// Decode VIN without saving; returns { make, model, year } strings or '' when unknown
+export async function decodeVin(vin) {
+  const cleaned = String(vin || '').trim().toUpperCase();
+  if (!cleaned) throw new Error('VIN is required');
+  const url = `https://vpic.nhtsa.dot.gov/api/vehicles/decodevin/${encodeURIComponent(cleaned)}?format=json`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('VIN decode request failed');
+  const data = await res.json();
+  const results = data?.Results || [];
+  const sanitize = (v) => {
+    const s = (v ?? '').toString().trim();
+    if (!s) return '';
+    const bad = new Set(['0', 'NOT APPLICABLE', 'NULL', 'N/A', 'NONE', 'UNKNOWN']);
+    return bad.has(s.toUpperCase()) ? '' : s;
+  };
+  const getVal = (key) => sanitize(results.find((r) => r.Variable === key)?.Value);
+  const make = getVal('Make');
+  const model = getVal('Model');
+  const year = getVal('Model Year');
+  return { make, model, year };
+}

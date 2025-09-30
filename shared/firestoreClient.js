@@ -12,3 +12,22 @@ export const auth = getAuth(app);
 export const db = getFirestore(app);
 
 export const firestoreService = createFirestoreService({ db, auth, helpers: firestoreHelpers });
+
+// Also export named methods for convenience/consistency with web wiring
+export const {
+	addOrUpdateVehicle,
+	getVehicles,
+	getVehicle,
+	addMaintenanceEntry,
+	getMaintenanceEntries,
+	getMaintenanceEntry,
+	updateMaintenanceEntry,
+	deleteMaintenanceEntry,
+	updateVehicle,
+	deleteVehicle,
+	// reminder stubs
+	addReminder,
+	getReminders,
+	completeReminder,
+	snoozeReminder,
+} = firestoreService;

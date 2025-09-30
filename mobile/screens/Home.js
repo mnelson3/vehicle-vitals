@@ -22,6 +22,13 @@ export default function Home({ navigation }) {
   return (
     <View style={{ padding: 20 }}>
       <Text style={{ fontSize: 24, marginBottom: 20 }}>Vehicle Vitals</Text>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+        <Button title="Instructions" onPress={() => navigation.navigate('Instructions')} />
+        <Button title="Login" onPress={() => navigation.navigate('Login')} />
+        <Button title="Terms" onPress={() => navigation.navigate('Terms')} />
+        <Button title="Privacy" onPress={() => navigation.navigate('Privacy')} />
+        <Button title="Contact" onPress={() => navigation.navigate('Contact')} />
+      </View>
       <Button title="Add Vehicle" onPress={() => navigation.navigate('AddVehicle')} />
       <FlatList
         data={vehicles}
