@@ -75,6 +75,32 @@ If `mobile/package.json` is missing RN scripts, inspect the file and run the com
 - If Firestore calls silently fail, confirm `auth.currentUser` is set and your Firebase config is valid.
 - If RN commands fail, verify your development machine has the required native toolchains (Xcode for iOS, Android SDK for Android).
 
+### Git push gotchas (GitHub)
+- Symptom: `git push` fails with `HTTP 400` / `send-pack: unexpected disconnect`.
+	- Cause: Some Git/libcurl versions over HTTP/2 can error on large pushes.
+	- Fix (safe, reversible):
+		```bash
+		git config --global http.version HTTP/1.1
+		git config --global http.postBuffer 524288000
+		```
+		Revert later with:
+		```bash
+		git config --global --unset http.version
+		git config --global --unset http.postBuffer
+		```
+
+- Auth options:
+	- HTTPS with a GitHub Personal Access Token (PAT)
+	- SSH (recommended if you prefer key-based auth)
+
+- Switch `origin` to SSH (optional):
+	```bash
+	git remote set-url origin git@github.com:mnelson3/vehicle-vitals-react-project.git
+	# test
+	ssh -T git@github.com
+	git push -u origin main
+	```
+
 ## How to help next
 If you want, I can:
 - Add exact `package.json`-driven run commands after reading `package.json` files.
