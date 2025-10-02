@@ -73,6 +73,7 @@ export default function EditVehicle() {
 
   return (
     <div style={{ padding: 20 }}>
+      <AdBanner />
       <h2>Edit Vehicle</h2>
       {/* Year dropdown */}
       <div style={{ marginBottom: 12 }}>

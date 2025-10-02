@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, FlatList, TextInput, Button, Alert } from 'react-native';
-import { firestoreService } from '../../shared/firestoreClient';
+import { firestoreService } from 'shared/firestoreClient';
 
 const { getMaintenanceEntries, addMaintenanceEntry } = firestoreService;
 

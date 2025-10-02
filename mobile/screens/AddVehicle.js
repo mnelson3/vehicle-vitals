@@ -2,9 +2,9 @@
 // File: mobile/screens/AddVehicle.js
 import React, { useState } from 'react';
 import { View, TextInput, Button, Alert } from 'react-native';
-import { db, auth } from '../../shared/firestoreClient';
+import { db, auth } from 'shared/firestoreClient';
 import { doc, setDoc } from 'firebase/firestore';
-import { defaultVehicle } from '../../shared/types';
+import { defaultVehicle } from 'shared/types';
 
 export default function AddVehicle({ navigation, route }) {
   const [form, setForm] = useState({ ...defaultVehicle, vin: route?.params?.vin || '' });

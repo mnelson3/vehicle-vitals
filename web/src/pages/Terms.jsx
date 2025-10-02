@@ -1,12 +1,12 @@
 import React from 'react';
-import SiteHeader from '../components/SiteHeader';
-import SiteFooter from '../components/SiteFooter';
+import AdBanner from '../components/AdBanner';
+// Header and footer provided by Layout
 
 export default function Terms() {
   return (
     <div>
-      <SiteHeader />
       <div className="container">
+        <AdBanner />
         <h1>Terms of Use</h1>
         <p>Last updated: September 30, 2025</p>
         <h3>1. Acceptance of Terms</h3>
@@ -44,7 +44,6 @@ export default function Terms() {
           Questions about these Terms? Contact us at <a href="/contact">Contact Us</a>.
         </p>
       </div>
-      <SiteFooter />
     </div>
   );
 }

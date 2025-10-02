@@ -15,12 +15,13 @@ export default function StackedVLogo({
   accent = 'var(--primary)',
   showText = true,
   compact = false,
+  wordmarkColor = 'var(--muted)'
 }) {
   const width = Math.round(size * 2.1);
   const height = size;
 
   const wordmark = (
-    <div style={{ fontSize: compact ? 10 : 11, letterSpacing: 2, marginTop: compact ? 0 : 4, color: 'var(--muted)', fontWeight: 700, textAlign: 'center' }}>
+    <div style={{ fontSize: compact ? 10 : 11, letterSpacing: 2, marginTop: compact ? 0 : 4, color: wordmarkColor, fontWeight: 700, textAlign: 'center', textShadow: wordmarkColor === 'var(--muted)' ? 'none' : '0 1px 6px rgba(0,0,0,0.35)' }}>
       VEHICLE<br />VITALS
     </div>
   );
@@ -30,23 +31,23 @@ export default function StackedVLogo({
       <svg
         width={width}
         height={height}
-        viewBox="0 0 64 32"
+        viewBox="0 0 72 32"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
         aria-hidden="true"
         focusable="false"
       >
-  {/* Outer V */}
-  <path d="M8 2 L32 30 L56 2" stroke={color} strokeWidth="2.4" strokeLinecap="round" />
-  {/* Middle V — slightly inset */}
-  <path d="M12 4 L32 27 L52 4" stroke={color} strokeOpacity="0.8" strokeWidth="1.9" strokeLinecap="round" />
-  {/* Inner V — more inset and higher clearance to increase spacing */}
-  <path d="M20 6.5 L32 22 L44 6.5" stroke={accent} strokeWidth="2.6" strokeLinecap="round" />
+  {/* Outer V (further inset to avoid edge collision and add breathing room) */}
+  <path d="M12 4 L32 30 L52 4" stroke={color} strokeWidth="2.6" strokeLinecap="round" />
+  {/* Middle V — more inset to increase spacing */}
+  <path d="M14 5 L32 26 L50 5" stroke={color} strokeOpacity="0.75" strokeWidth="2.1" strokeLinecap="round" />
+  {/* Inner V — further inset and higher clearance for stronger separation */}
+  <path d="M24 8 L32 20 L40 8" stroke={accent} strokeWidth="3.0" strokeLinecap="round" />
 
         {/* Bolt accents (hex nuts) at endpoints and apex */}
-        <Hex cx={8} cy={2} r={3} fill={color} />
-        <Hex cx={56} cy={2} r={3} fill={color} />
-        <Hex cx={32} cy={30} r={3} fill={accent} />
+  <Hex cx={12} cy={4} r={3.5} fill={color} />
+  <Hex cx={52} cy={4} r={3.5} fill={color} />
+        <Hex cx={32} cy={30} r={3.5} fill={accent} />
       </svg>
       {showText && wordmark}
     </div>

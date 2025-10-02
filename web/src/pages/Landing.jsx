@@ -1,17 +1,16 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import SiteHeader from '../components/SiteHeader';
-import SiteFooter from '../components/SiteFooter';
+// Header and footer provided by Layout
+import AdBanner from '../components/AdBanner';
 
 export default function Landing() {
   const heroSrc = import.meta.env.VITE_HERO_IMAGE_URL || '/images/hero-garage.jpg';
   return (
     <div>
-      <SiteHeader />
       {/* Full-bleed Hero Section */}
       <section
         className="hero hero-full"
-        style={{ ['--hero-image']: `url(${heroSrc})` }}
+        style={{ '--hero-image': `url(${heroSrc})` }}
       >
         <div className="hero-overlay" />
         <div className="hero-content">
@@ -47,10 +46,12 @@ export default function Landing() {
                 <p className="muted">A clear record helps with resale and long-term care—one place to remember it all.</p>
               </div>
             </section>
+            <div className="spacing-lg">
+              <AdBanner />
+            </div>
           </div>
         </div>
       </section>
-      <SiteFooter />
     </div>
   );
 }

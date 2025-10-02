@@ -2,7 +2,7 @@
 // File: mobile/screens/EditVehicle.js
 import React, { useState, useEffect } from 'react';
 import { View, TextInput, Button, Alert } from 'react-native';
-import { db, auth } from '../../shared/firestoreClient';
+import { db, auth } from 'shared/firestoreClient';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 
 export default function EditVehicle({ route, navigation }) {

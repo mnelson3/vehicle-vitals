@@ -2,5 +2,12 @@
   "dependencies": {
     "@dataconnect/generated": "file:src/dataconnect-generated",
     "firebase": "^12.3.0"
+  },
+  "devDependencies": {
+    "@react-native-community/cli": "latest",
+    "sharp": "^0.33.5"
+  },
+  "scripts": {
+    "export:logo": "node scripts/export-logo.js"
   }
 }

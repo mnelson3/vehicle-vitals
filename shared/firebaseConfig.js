@@ -4,28 +4,27 @@ import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
-// Try to read env vars from multiple environments
-// - Vite (web): import.meta.env.VITE_*
-// - Node/native: process.env.VITE_*
-let env = {};
-// Prefer Vite's import.meta.env when available; fall back to process.env.
+// Read env vars
+// - Web (Vite): do not reference import.meta here; web has its own config file.
+// - Native (Expo)/Node: read from process.env and merge in Expo Constants.extra when available.
+let env = (typeof process !== 'undefined' && process.env) ? { ...process.env } : {};
 try {
-  // Accessing import.meta.env directly may throw in some runtimes; guard with try/catch.
-  // In Vite this will populate env.
-  // eslint-disable-next-line no-undef
-  env = import.meta?.env || {};
-} catch (e) {
-  // ignore; will try process.env below
+  // Lazy require to avoid bundling in web
+  // eslint-disable-next-line global-require
+  const Constants = require('expo-constants');
+  const extra = (Constants?.expoConfig?.extra) || (Constants?.manifest?.extra) || {};
+  env = { ...env, ...extra };
+} catch (_) {
+  // Not running under Expo; ignore
 }
-if (typeof process !== 'undefined' && process.env) env = { ...process.env, ...env };
 
 export const firebaseConfig = {
-  apiKey: env.VITE_FIREBASE_API_KEY || env.FIREBASE_API_KEY || 'YOUR_API_KEY',
-  authDomain: env.VITE_FIREBASE_AUTH_DOMAIN || env.FIREBASE_AUTH_DOMAIN || 'YOUR_AUTH_DOMAIN',
-  projectId: env.VITE_FIREBASE_PROJECT_ID || env.FIREBASE_PROJECT_ID || 'YOUR_PROJECT_ID',
-  storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET || env.FIREBASE_STORAGE_BUCKET || 'YOUR_STORAGE_BUCKET',
-  messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID || env.FIREBASE_MESSAGING_SENDER_ID || 'YOUR_MSG_SENDER_ID',
-  appId: env.VITE_FIREBASE_APP_ID || env.FIREBASE_APP_ID || 'YOUR_APP_ID'
+  apiKey: env.VITE_FIREBASE_API_KEY || env.EXPO_PUBLIC_FIREBASE_API_KEY || env.FIREBASE_API_KEY || 'YOUR_API_KEY',
+  authDomain: env.VITE_FIREBASE_AUTH_DOMAIN || env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN || env.FIREBASE_AUTH_DOMAIN || 'YOUR_AUTH_DOMAIN',
+  projectId: env.VITE_FIREBASE_PROJECT_ID || env.EXPO_PUBLIC_FIREBASE_PROJECT_ID || env.FIREBASE_PROJECT_ID || 'YOUR_PROJECT_ID',
+  storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET || env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET || env.FIREBASE_STORAGE_BUCKET || 'YOUR_STORAGE_BUCKET',
+  messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID || env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || env.FIREBASE_MESSAGING_SENDER_ID || 'YOUR_MSG_SENDER_ID',
+  appId: env.VITE_FIREBASE_APP_ID || env.EXPO_PUBLIC_FIREBASE_APP_ID || env.FIREBASE_APP_ID || 'YOUR_APP_ID'
 };
 
 // For platform-specific usage, consumer can initialize the app and export auth/db as needed.

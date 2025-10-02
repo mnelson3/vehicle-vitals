@@ -10,26 +10,42 @@ import Privacy from './pages/Privacy';
 import Contact from './pages/Contact';
 import AddVehicle from './pages/AddVehicle';
 import EditVehicle from './pages/EditVehicle';
+import SignUp from './pages/SignUp';
+import ProtectedRoute from './components/ProtectedRoute';
+import Profile from './pages/Profile';
 import DevSeed from './pages/DevSeed';
 import AuthAnonButton from './components/AuthAnonButton';
 import DevStatusPanel from './components/DevStatusPanel';
+import Layout from './components/Layout';
+import ComingSoon from './pages/ComingSoon';
 
 function App() {
+  const isComingSoonDomain = typeof window !== 'undefined' && ['vehicle-vitals.com', 'www.vehicle-vitals.com'].includes(window.location.hostname);
   return (
     <Router>
       <DevStatusPanel />
-      <AuthAnonButton />
+      {import.meta.env.DEV && <AuthAnonButton />}
       <Routes>
-        <Route path="/" element={<Landing />} />
-        <Route path="/app" element={<Home />} />
-        <Route path="/instructions" element={<Instructions />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/terms" element={<Terms />} />
-        <Route path="/privacy" element={<Privacy />} />
-        <Route path="/contact" element={<Contact />} />
-        <Route path="/add-vehicle" element={<AddVehicle />} />
-        <Route path="/edit-vehicle/:vin" element={<EditVehicle />} />
-        {import.meta.env.DEV && <Route path="/dev/seed" element={<DevSeed />} />}
+        {isComingSoonDomain ? (
+          <Route element={<Layout forceOverlay />}>
+            <Route path="*" element={<ComingSoon />} />
+          </Route>
+        ) : (
+        <Route element={<Layout />}>
+          <Route path="/" element={<Landing />} />
+          <Route path="/app" element={<ProtectedRoute><Home /></ProtectedRoute>} />
+          <Route path="/instructions" element={<Instructions />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/signup" element={<SignUp />} />
+          <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+          <Route path="/terms" element={<Terms />} />
+          <Route path="/privacy" element={<Privacy />} />
+          <Route path="/contact" element={<Contact />} />
+          <Route path="/add-vehicle" element={<ProtectedRoute><AddVehicle /></ProtectedRoute>} />
+          <Route path="/edit-vehicle/:vin" element={<ProtectedRoute><EditVehicle /></ProtectedRoute>} />
+          {import.meta.env.DEV && <Route path="/dev/seed" element={<DevSeed />} />}
+        </Route>
+        )}
       </Routes>
     </Router>
   );
