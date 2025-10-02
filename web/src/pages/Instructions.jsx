@@ -1,13 +1,13 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import SiteHeader from '../components/SiteHeader';
-import SiteFooter from '../components/SiteFooter';
+import AdBanner from '../components/AdBanner';
+// Header and footer provided by Layout
 
 export default function Instructions() {
   return (
     <div>
-      <SiteHeader />
       <div className="container medium">
+        <AdBanner />
         <h1>Instructions</h1>
         <p>Follow these steps to get started with Vehicle Vitals:</p>
         <ol>
@@ -25,7 +25,6 @@ export default function Instructions() {
           Need help? <Link to="/contact">Contact us</Link>.
         </p>
       </div>
-      <SiteFooter />
     </div>
   );
 }

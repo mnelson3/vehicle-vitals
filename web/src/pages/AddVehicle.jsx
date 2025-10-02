@@ -21,8 +21,8 @@ export default function AddVehicle() {
   const handleSubmit = async () => {
     try {
       await addOrUpdateVehicle(form);
-      alert('Vehicle added successfully');
-      navigate('/');
+  alert('Vehicle added successfully');
+  navigate('/app');
     } catch (err) {
       alert('Error: ' + err.message);
     }
@@ -49,6 +49,7 @@ export default function AddVehicle() {
 
   return (
     <div style={{ padding: 20 }}>
+      <AdBanner />
       <h2>Add Vehicle</h2>
       {/* Year dropdown */}
       <div style={{ marginBottom: 12 }}>

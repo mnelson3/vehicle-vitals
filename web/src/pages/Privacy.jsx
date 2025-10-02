@@ -1,12 +1,12 @@
 import React from 'react';
-import SiteHeader from '../components/SiteHeader';
-import SiteFooter from '../components/SiteFooter';
+import AdBanner from '../components/AdBanner';
+// Header and footer provided by Layout
 
 export default function Privacy() {
   return (
     <div>
-      <SiteHeader />
       <div className="container">
+        <AdBanner />
         <h1>Privacy Policy</h1>
         <p>Last updated: September 30, 2025</p>
         <h3>Information We Collect</h3>
@@ -40,7 +40,6 @@ export default function Privacy() {
           Questions about privacy? Visit <a href="/contact">Contact Us</a>.
         </p>
       </div>
-      <SiteFooter />
     </div>
   );
 }

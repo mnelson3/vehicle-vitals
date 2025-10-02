@@ -1,6 +1,36 @@
-# Mobile (React Native CLI) setup notes
+# Mobile setup
 
-This repo contains `mobile/App.js` and `mobile/screens/*`, but it does not include native `ios/` and `android/` directories. To run the mobile app using the React Native CLI (non-Expo) follow these steps locally.
+This repo ships the JS source in `mobile/App.js` and `mobile/screens/*`. You can run it either with Expo (recommended, since `ScanVIN` uses `expo-barcode-scanner`) or with the React Native CLI (requires generating native `android/` and `ios/` folders).
+
+## Option A — Expo (recommended)
+
+Prereqs
+- Android Studio installed with an emulator (or a physical device with USB debugging)
+- Node.js 20.19.4 or newer (Expo SDK 54+ requires this)
+- npm
+
+Steps
+```bash
+cd mobile
+npm install
+# Start Android emulator from Android Studio, then:
+npm run android  # opens Expo + launches the app on the emulator
+```
+
+If you see an error mentioning `metro/src/lib/TerminalReporter` or engine checks, update Node to ≥ 20.19.4 and reinstall deps:
+```bash
+nvm install 20.19.4 && nvm use 20.19.4
+cd mobile && rm -rf node_modules package-lock.json && npm install
+npm run android
+```
+
+Notes
+- Expo doesn’t require `android/` or `ios/` project folders.
+- `ScanVIN` uses the device camera via `expo-barcode-scanner`, which works out-of-the-box with Expo.
+
+## Option B — React Native CLI (bare)
+
+This repo does not include native `ios/` and `android/` directories. To run with RN CLI you need to initialize a native project and copy the JS files over.
 
 1. Ensure prerequisites are installed on your machine:
    - Node.js (LTS)
@@ -34,5 +64,5 @@ npm run ios
 ```
 
 Notes
-- If you prefer a faster local iteration cycle and don't need deep native modules, Expo is often quicker to get started. You indicated you prefer non-Expo — these steps ensure a standard React Native CLI setup.
+- If you prefer a faster local iteration cycle and don't need deep native modules, Expo is often quicker to get started.
 - If you want, I can generate a small script/patch that copies `mobile/App.js` into the RN init output and creates basic `index.js` entries.

@@ -1,0 +1,1 @@
+Placeholders for app icon and splash. Replace icon.png, splash.png, adaptive-icon.png as desired.

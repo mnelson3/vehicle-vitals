@@ -13,6 +13,16 @@ const firebaseConfig = {
   appId: env.VITE_FIREBASE_APP_ID || 'YOUR_APP_ID',
 };
 
+if (
+  !env.VITE_FIREBASE_API_KEY ||
+  firebaseConfig.apiKey === 'YOUR_API_KEY' ||
+  firebaseConfig.authDomain === 'YOUR_AUTH_DOMAIN' ||
+  firebaseConfig.projectId === 'YOUR_PROJECT_ID'
+) {
+  // eslint-disable-next-line no-console
+  console.warn('[Firebase] Missing or placeholder Firebase config detected. Set VITE_FIREBASE_* env vars. See web/.env.example.');
+}
+
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
