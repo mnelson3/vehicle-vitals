@@ -30,6 +30,10 @@ web/build/
 
 # Logs
 *.log
+*-debug.log
+dataconnect-debug.log
+firestore-debug.log
+pglite-debug.log
 
 # React Native
 android/

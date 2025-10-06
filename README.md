@@ -1,25 +1,26 @@
 # Vehicle Vitals
 
-A lightweight project for tracking vehicle information across web and mobile frontends. Web is React + react-router; mobile is React Native. Firebase is used for auth and Firestore persistence. Small shared utilities/config live in `shared/`.
+A lightweight project for tracking vehicle information across web and mobile frontends. Web is React + react-router; mobile is Flutter with go_router. Firebase is used for auth and Firestore persistence. Small shared utilities/config live in `shared/`.
 
 ## Quick overview
 - Web: React app with pages in `web/src/pages/` and a router wired in `App.jsx`.
-- Mobile: React Native app under `mobile/` with screens in `mobile/screens/` and stack navigation in `mobile/App.js`.
+- Mobile: Flutter app under `mobile/` with screens in `lib/screens/` and go_router navigation.
 - Shared: `shared/firebaseConfig.js`, `shared/azureConfig.js`, and `shared/types.js` contain cross-cutting config and types.
 
 ## Project structure (important files)
 - `App.jsx` — web entry that registers routes to `web/src/pages/*`.
 - `web/src/pages/Home.jsx` — example page that lists Firestore vehicles for the current user.
 - `web/src/utils/vehicleService.js` — VIN decoding against NHTSA VPIC and example `fetchVehicleByVINAndSave(vin)` that writes to Firestore.
-- `mobile/App.js` — React Native navigation stack (Home, AddVehicle, EditVehicle, ScanVIN).
+- `mobile/lib/main.dart` — Flutter app entry with go_router navigation and Provider state management.
+- `mobile/lib/screens/` — Flutter screens (HomeScreen, AddVehicleScreen, EditVehicleScreen, ScanVINScreen, MaintenanceListScreen, etc.).
 - `shared/firebaseConfig.js` — Firebase initialization exporting `auth`, `db`, and `messaging`.
 - `shared/azureConfig.js` — Azure/MSAL placeholders and example backend helpers (`/api/data`, `/api/notify`).
 - `shared/types.js` — `defaultVehicle` shape used across the app.
 
 ## Setup & run (developer notes)
-The repository contains both a web and a mobile app. Check each folder for a `package.json` and adjust commands if you use `yarn` or `pnpm`.
+The repository contains a web app and a Flutter mobile app. Check each folder for setup instructions.
 
-Web (expected)
+Web
 1. Install dependencies at repo root or `web/` if packages are split:
 
 ```bash
@@ -36,22 +37,29 @@ npm start
 npm start --prefix web
 ```
 
-Mobile (expected)
-1. Install dependencies (in `mobile/` if that folder has its own package.json):
+Mobile (Flutter)
+1. Navigate to mobile directory and install dependencies:
 
 ```bash
-npm install --prefix mobile
+cd mobile
+flutter pub get
 ```
 
-2. Run on simulator / device using React Native tooling:
+2. Configure Firebase:
 
 ```bash
-npx react-native run-ios
-# or
-npx react-native run-android
+dart pub global activate flutterfire_cli
+flutterfire configure
 ```
 
-If `mobile/package.json` is missing RN scripts, inspect the file and run the commands your setup requires.
+3. Run on simulator / device:
+
+```bash
+flutter run
+# or specifically
+flutter run -d ios
+flutter run -d android
+```
 
 ## Firebase & credentials
 - `shared/firebaseConfig.js` contains placeholders. Replace values with real Firebase credentials from your Firebase project or set them via environment variables / platform config.
@@ -68,12 +76,13 @@ If `mobile/package.json` is missing RN scripts, inspect the file and run the com
 ## Useful files to open first
 - `web/src/pages/Home.jsx`
 - `web/src/utils/vehicleService.js`
-- `mobile/App.js`
+- `mobile/lib/main.dart`
+- `mobile/lib/screens/home_screen.dart`
 - `shared/firebaseConfig.js`
 
 ## Troubleshooting
 - If Firestore calls silently fail, confirm `auth.currentUser` is set and your Firebase config is valid.
-- If RN commands fail, verify your development machine has the required native toolchains (Xcode for iOS, Android SDK for Android).
+- If Flutter commands fail, verify your development machine has the required native toolchains (Xcode for iOS, Android SDK for Android).
 
 ### Git push gotchas (GitHub)
 - Symptom: `git push` fails with `HTTP 400` / `send-pack: unexpected disconnect`.
