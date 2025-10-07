@@ -1,0 +1,33 @@
+{
+  "name": "@vehicle-vitals/shared",
+  "version": "1.0.0",
+  "description": "Shared utilities and Firebase services for Vehicle Vitals",
+  "main": "index.js",
+  "type": "module",
+  "exports": {
+    ".": "./index.js",
+    "./firebase": "./firebaseConfig.js",
+    "./firestore": "./firestoreServiceFactory.js",
+    "./types": "./types.js",
+    "./azure": "./azureConfig.js"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "lint": "eslint . --ext .js,.ts",
+    "lint:fix": "eslint . --ext .js,.ts --fix",
+    "format": "prettier --write .",
+    "clean": "rm -rf node_modules dist"
+  },
+  "keywords": ["firebase", "firestore", "utilities", "vehicle-vitals"],
+  "author": "Vehicle Vitals Team",
+  "license": "MIT",
+  "dependencies": {
+    "firebase": "^10.14.1"
+  },
+  "devDependencies": {},
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mnelson3/vehicle-vitals-react-project.git",
+    "directory": "packages/shared"
+  }
+}

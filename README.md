@@ -1,6 +1,17 @@
-# Vehicle Vitals
+# Vehicle Vitals Monorepo
 
-A lightweight project for tracking vehicle information across web and mobile frontends. Web is React + react-router; mobile is Flutter with go_router. Firebase is used for auth and Firestore persistence. Small shared utilities/config live in `shared/`.
+A modern vehicle management application with web and mobile clients, built with React, Flutter, and Firebase.
+
+## 🏗️ Architecture
+
+This is a monorepo containing multiple packages that work together:
+
+```
+packages/
+├── shared/           # Common utilities, Firebase services, types
+├── web/             # React web application (Vite + React 18)
+└── mobile/          # Flutter mobile application (iOS + Android)
+```
 
 ## Quick overview
 - Web: React app with pages in `web/src/pages/` and a router wired in `App.jsx`.
@@ -21,21 +32,35 @@ A lightweight project for tracking vehicle information across web and mobile fro
 The repository contains a web app and a Flutter mobile app. Check each folder for setup instructions.
 
 Web
-1. Install dependencies at repo root or `web/` if packages are split:
+1. **Optimized Installation (Recommended)**: Use the memory-optimized installation script:
 
 ```bash
-npm install
-# or
-npm install --prefix web
+./install.sh
 ```
 
-2. Start development server (typical):
+2. **Manual Installation**: If you prefer to install manually:
 
 ```bash
-npm start
-# or
-npm start --prefix web
+# Ensure you have Node.js v20.x
+node --version
+
+# Install with memory optimization
+NODE_OPTIONS="--max-old-space-size=4096" npm install
 ```
+
+3. Start development server:
+
+```bash
+npm run dev:web
+```
+
+4. Build for production:
+
+```bash
+npm run build:web
+```
+
+**Note**: This project uses a dual-installation approach (root + web) to prevent npm hanging and memory issues. Each workspace manages its own dependencies independently.
 
 Mobile (Flutter)
 1. Navigate to mobile directory and install dependencies:
@@ -45,25 +70,49 @@ cd mobile
 flutter pub get
 ```
 
-2. Configure Firebase:
+2. **Firebase Configuration Status:**
+   - **✅ iOS**: Configured with GoogleService-Info.plist
+   - **✅ Android**: Configured with google-services.json
+
+3. **Generate platform files (if needed):**
 
 ```bash
-dart pub global activate flutterfire_cli
-flutterfire configure
+flutter create --platforms=ios,android .
 ```
 
-3. Run on simulator / device:
+4. **Run on simulator / device:**
 
 ```bash
-flutter run
-# or specifically
-flutter run -d ios
-flutter run -d android
+flutter run -d ios      # iOS is ready!
+flutter run -d android  # Android is ready!
 ```
+
+See setup guides:
+- `mobile/iOS-Firebase-Setup.md` for iOS instructions
+- `mobile/Android-Firebase-Setup.md` for Android instructions
 
 ## Firebase & credentials
-- `shared/firebaseConfig.js` contains placeholders. Replace values with real Firebase credentials from your Firebase project or set them via environment variables / platform config.
-- Firestore path convention: user data is stored under `users/${userId}/vehicles/${vin}` — preserve this when modifying database code.
+
+**⚠️ IMPORTANT: Firebase is not configured yet!** The project uses placeholder values and will not connect to Firebase until properly configured.
+
+### Quick Firebase Setup:
+1. **Run the setup helper**: `./setup-firebase.sh` (provides step-by-step guidance)
+2. **Or follow manual setup**:
+   - Create a Firebase project at https://console.firebase.google.com/
+   - Enable Authentication (Email/Password + Google)
+   - Create Firestore Database
+   - Get your web app config from Project Settings
+   - Copy `web/.env.example` to `web/.env.local`
+   - Replace placeholder values with your Firebase config
+
+### Configuration Files:
+- **Web**: `web/.env.local` (create from `web/.env.example`)
+- **Mobile**: Run `flutterfire configure` in the `mobile/` directory
+- **Firestore Rules**: `firebase/firestore.rules` (deploy with `firebase deploy --only firestore:rules`)
+
+### Data Convention:
+- User data is stored under `users/${userId}/vehicles/${vin}`
+- Preserve this path structure when modifying database code
 
 ## Azure & backend notes
 - `shared/azureConfig.js` contains an MSAL instance and example helper functions that call `/api/*` endpoints. These are placeholders — only update them when a backend exists.

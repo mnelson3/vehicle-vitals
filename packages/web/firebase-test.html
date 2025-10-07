@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Firebase Connection Test</title>
+</head>
+<body>
+    <h1>Firebase Connection Test</h1>
+    <div id="status">Testing Firebase connection...</div>
+    <div id="config-info"></div>
+    <div id="error-info" style="color: red;"></div>
+
+    <script type="module">
+        // Import Firebase config to test connection
+        import { auth, db } from './src/shared/firebaseConfig.js';
+        import { onAuthStateChanged } from 'firebase/auth';
+        import { getDoc, doc } from 'firebase/firestore';
+
+        const statusDiv = document.getElementById('status');
+        const configDiv = document.getElementById('config-info');
+        const errorDiv = document.getElementById('error-info');
+
+        // Check config
+        const config = auth.app.options;
+        configDiv.innerHTML = `
+            <h3>Firebase Config:</h3>
+            <p><strong>API Key:</strong> ${config.apiKey.startsWith('YOUR_') ? '❌ PLACEHOLDER' : '✅ SET'}</p>
+            <p><strong>Auth Domain:</strong> ${config.authDomain.startsWith('YOUR_') ? '❌ PLACEHOLDER' : '✅ SET'}</p>
+            <p><strong>Project ID:</strong> ${config.projectId.startsWith('YOUR_') ? '❌ PLACEHOLDER' : '✅ SET'}</p>
+            <p><strong>App ID:</strong> ${config.appId.startsWith('YOUR_') ? '❌ PLACEHOLDER' : '✅ SET'}</p>
+        `;
+
+        // Test auth state
+        try {
+            const unsubscribe = onAuthStateChanged(auth, (user) => {
+                if (user) {
+                    statusDiv.innerHTML = '✅ Firebase connected - User authenticated: ' + user.uid;
+                } else {
+                    statusDiv.innerHTML = '⚠️ Firebase connected - No user authenticated';
+                }
+                unsubscribe();
+            });
+
+            // Test Firestore connection
+            setTimeout(async () => {
+                try {
+                    // Try to access Firestore (this will fail if config is wrong)
+                    const testDoc = doc(db, 'test', 'connection');
+                    await getDoc(testDoc);
+                    console.log('Firestore connection test passed');
+                } catch (err) {
+                    errorDiv.innerHTML += `<p><strong>Firestore Error:</strong> ${err.message}</p>`;
+                }
+            }, 2000);
+
+        } catch (err) {
+            errorDiv.innerHTML = `<strong>Firebase Auth Error:</strong> ${err.message}`;
+            statusDiv.innerHTML = '❌ Firebase connection failed';
+        }
+    </script>
+</body>
+</html>
