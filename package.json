@@ -1,15 +1,16 @@
 {
-  "dependencies": {
-    "@dataconnect/generated": "file:src/dataconnect-generated",
-    "firebase": "^12.3.0"
-  },
-  "devDependencies": {
-    "@react-native-community/cli": "latest",
-    "firebase-tools": "^14.18.0",
-    "sharp": "^0.33.5"
-  },
+  "name": "vehicle-vitals-monorepo",
+  "private": true,
+  "description": "Root workspace for Vehicle Vitals (web + mobile)",
   "scripts": {
     "export:logo": "node scripts/export-logo.js",
     "dataconnect:codegen": "node scripts/dataconnect-codegen.js"
+  },
+  "devDependencies": {
+    "sharp": "^0.33.5"
+  },
+  "engines": {
+    "node": ">=20 <23",
+    "npm": ">=9"
   }
 }
