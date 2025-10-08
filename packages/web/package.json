@@ -15,12 +15,13 @@
     "clean": "rm -rf node_modules dist"
   },
   "dependencies": {
-    "@vehicle-vitals/shared": "file:../shared",
     "@dataconnect/generated": "file:../../src/dataconnect-generated",
-    "firebase": "^10.0.0",
+    "@vehicle-vitals/shared": "file:../shared",
+    "firebase": "^10.14.1",
     "react": "^18.0.0",
     "react-dom": "^18.0.0",
-    "react-router-dom": "^6.0.0"
+    "react-router-dom": "^6.0.0",
+    "tslib": "^2.8.1"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^3.0.0",

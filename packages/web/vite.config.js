@@ -13,6 +13,19 @@ export default defineConfig({
       firebase: path.resolve(__dirname, 'node_modules/firebase'),
     },
   },
+  build: {
+    rollupOptions: {
+      external: [],
+      output: {
+        manualChunks: {
+          firebase: ['firebase/app', 'firebase/auth', 'firebase/firestore'],
+        },
+      },
+    },
+  },
+  optimizeDeps: {
+    include: ['firebase/app', 'firebase/auth', 'firebase/firestore', 'tslib'],
+  },
   server: {
     fs: {
       // allow serving files from one level up
