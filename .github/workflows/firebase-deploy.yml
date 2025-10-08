@@ -4,6 +4,16 @@ name: CI — Build and Deploy to Firebase Hosting
 on:
   push:
     branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: false
+        default: 'production'
+        type: choice
+        options:
+        - production
+        - staging
 
 jobs:
   build-and-deploy:
@@ -11,15 +21,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Use Node.js 18
+      - name: Use Node.js 20
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20
 
       - name: Install dependencies
         run: |
-          cd web
-          npm ci
+          npm install
 
       - name: Build web
         env:
@@ -33,8 +42,7 @@ jobs:
           VITE_ADSENSE_CLIENT: ${{ secrets.VITE_ADSENSE_CLIENT || vars.VITE_ADSENSE_CLIENT || '' }}
           VITE_ADSENSE_SLOT: ${{ secrets.VITE_ADSENSE_SLOT || vars.VITE_ADSENSE_SLOT || '' }}
         run: |
-          cd web
-          npm run build
+          npm run build:web
 
       - name: Install Firebase CLI
         run: npm install -g firebase-tools@11
@@ -45,7 +53,7 @@ jobs:
           FIREBASE_PROJECT: ${{ secrets.FIREBASE_PROJECT }}
         run: |
           # Ensure build exists
-          cd web
+          cd packages/web
           ls -la dist
           # Deploy only hosting for the configured project
-          firebase deploy --project "$FIREBASE_PROJECT" --token "$FIREBASE_TOKEN" --only hosting
+          firebase deploy --project "$FIREBASE_PROJECT" --token "$FIREBASE_TOKEN" --only hosting --config ../../config/firebase.json
