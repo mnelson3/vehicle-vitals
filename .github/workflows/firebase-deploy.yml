@@ -53,7 +53,13 @@ jobs:
           FIREBASE_PROJECT: ${{ secrets.FIREBASE_PROJECT }}
         run: |
           # Ensure build exists
-          cd packages/web
-          ls -la dist
-          # Deploy only hosting for the configured project
-          firebase deploy --project "$FIREBASE_PROJECT" --token "$FIREBASE_TOKEN" --only hosting --config ../../config/firebase.json
+          if [ ! -d "packages/web/dist" ]; then
+            echo "❌ Build directory packages/web/dist not found!"
+            echo "Available files in packages/web:"
+            ls -la packages/web/
+            exit 1
+          fi
+          echo "✅ Build directory found:"
+          ls -la packages/web/dist
+          # Deploy from root with proper config
+          firebase deploy --project "$FIREBASE_PROJECT" --token "$FIREBASE_TOKEN" --only hosting --config config/firebase.json
