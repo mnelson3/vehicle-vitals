@@ -1,3 +1,5 @@
+import type { CSSProperties } from 'react';
+
 interface StackedVLogoProps {
   size?: number;
   color?: string;
@@ -9,55 +11,67 @@ interface StackedVLogoProps {
   gaugeColor?: string;
 }
 
+// The mark is a simplified crop of the master icon (roof + gauge only,
+// dropping the road/document/checkmark detail that turns to mush at nav
+// sizes) -- it isn't square. This is its fixed source aspect ratio.
+const MARK_ASPECT_RATIO = 569 / 340;
+
 export default function StackedVLogo({
   size = 32,
   color = 'currentColor',
-  accent = '#334155',
   showText = true,
   compact = false,
   wordmarkColor = '#64748b',
-  windowColor = '#cbd5e1',
-  gaugeColor = '#dc2626'
 }: StackedVLogoProps) {
-  const width = Math.round(size * 2.34);
-  const height = size;
+  const width = Math.round(size * MARK_ASPECT_RATIO);
+  const isLightMark =
+    color.toLowerCase() === '#ffffff' ||
+    color.toLowerCase() === 'white' ||
+    wordmarkColor.toLowerCase() === '#ffffff';
+  // Cache-bust: this filename was previously overwritten in place multiple
+  // times behind a 1-year immutable Cache-Control header, so browsers that
+  // fetched an earlier version had a stale (differently-proportioned) copy
+  // stuck in cache, rendered distorted once forced into the current square
+  // dimensions. Bumping this query param forces a fresh fetch for everyone.
+  const logoSrc = isLightMark
+    ? '/assets/vehicle-vitals-header-mark-light.png?v=2026-07-09b'
+    : '/assets/vehicle-vitals-header-mark.png?v=2026-07-09b';
+
+  const compactFontSize = Math.max(14, Math.round(size * 0.3));
+  const compactLetterSpacing = +(compactFontSize * -0.025).toFixed(2);
 
   const wordmark = (
-    <div className={`stacked-v-logo-wordmark ${compact ? 'compact' : ''} ${wordmarkColor === '#64748b' ? '' : 'shadow'}`} style={{ color: wordmarkColor }}>
-      VEHICLE<br />VITALS
+    <div
+      className={`stacked-v-logo-wordmark ${compact ? 'compact' : ''} ${wordmarkColor === '#64748b' ? '' : 'shadow'}`}
+      style={{ color: wordmarkColor }}
+    >
+      {compact ? 'Vehicle Vitals' : <>VEHICLE<br />VITALS</>}
     </div>
   );
 
   return (
-    <div className={`stacked-v-logo-container ${compact ? 'compact' : ''}`}>
-      <svg
+    <div
+      className={`stacked-v-logo-container ${compact ? 'compact' : ''}`}
+      style={
+        compact
+          ? ({
+              '--logo-icon-height': `${size}px`,
+              '--logo-icon-width': `${width}px`,
+              '--logo-font-size': `${compactFontSize}px`,
+              '--logo-letter-spacing': `${compactLetterSpacing}px`,
+            } as CSSProperties)
+          : undefined
+      }
+    >
+      <img
+        src={logoSrc}
         width={width}
-        height={height}
-        viewBox="0 0 75 32"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
+        height={size}
+        className="stacked-v-logo-mark"
+        alt=""
         aria-hidden="true"
-        focusable="false"
-      >
-        {/* Flat, bold hot-rod silhouette — a small-size-legible stand-in for
-            the detailed app icon photo: low body, rounded cockpit bubble,
-            long hood, big wheels. */}
-        <path
-          d="M 6,24 Q 6,17 13,16 Q 16,10 24,10 Q 30,10 33,14 Q 40,16 46,16 Q 50,16 50,20 L 50,24 Z"
-          fill={color}
-        />
-        <path d="M 19,16 Q 19,13.2 22,12.8 Q 26,13 27.5,15.5 Z" fill={windowColor} />
-        <circle cx="16" cy="25" r="5" fill={accent} />
-        <circle cx="42" cy="25" r="5" fill={accent} />
-
-        {/* Temperature gauge beside the car — ties "Vehicle" to "Vitals"
-            (a vital sign reading). Kept as a separate, larger element
-            rather than embedded in the car so its shape (bulb, tube,
-            rising fill) stays legible small. */}
-        <rect x="61.7" y="6" width="4.6" height="19" rx="2.3" stroke={gaugeColor} strokeWidth="1.8" fill="none" />
-        <rect x="62.9" y="10" width="2.2" height="15" rx="1.1" fill={gaugeColor} />
-        <circle cx="64" cy="27" r="4.5" fill={gaugeColor} />
-      </svg>
+        decoding="async"
+      />
       {showText && wordmark}
     </div>
   );

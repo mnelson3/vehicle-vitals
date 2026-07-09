@@ -48,6 +48,8 @@ import 'services/onboarding_service.dart';
 import 'services/premium_service.dart';
 import 'theme/app_theme.dart';
 
+const bool _screenshotMode = bool.fromEnvironment('VV_SCREENSHOT_MODE');
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -96,7 +98,7 @@ void main() async {
                 Text(
                   kDebugMode
                       ? details.exceptionAsString()
-                      : 'Please restart the app or contact support if the problem persists.',
+                      : 'Please restart the app or visit Support if the problem persists.',
                   textAlign: TextAlign.center,
                 ),
               ],
@@ -169,6 +171,7 @@ class VehicleVitalsApp extends StatelessWidget {
           return ErrorWidgetWrapper(
             child: MaterialApp.router(
               title: 'Garage',
+              debugShowCheckedModeBanner: !_screenshotMode,
               theme: AppTheme.lightTheme(),
               darkTheme: AppTheme.darkTheme(),
               themeMode: ThemeMode.system,
@@ -176,11 +179,13 @@ class VehicleVitalsApp extends StatelessWidget {
               builder: (context, child) {
                 return Column(
                   children: [
-                    if (kDebugMode) const _DebugFirebaseEnvBanner(),
-                    const SafeArea(
-                      bottom: false,
-                      child: AdBanner(margin: EdgeInsets.zero),
-                    ),
+                    if (kDebugMode && !_screenshotMode)
+                      const _DebugFirebaseEnvBanner(),
+                    if (!_screenshotMode)
+                      const SafeArea(
+                        bottom: false,
+                        child: AdBanner(margin: EdgeInsets.zero),
+                      ),
                     Expanded(child: child ?? const SizedBox.shrink()),
                   ],
                 );
@@ -215,6 +220,7 @@ class VehicleVitalsApp extends StatelessWidget {
             location.startsWith('/app/add-vehicle') ||
             location == '/app/reminder-preferences' ||
             location == '/app/premium' ||
+            location == '/app/support' ||
             location == '/app/contact';
 
         if (isLoading) return null; // Don't redirect while loading
@@ -323,6 +329,10 @@ class VehicleVitalsApp extends StatelessWidget {
           builder: (context, state) => const EmailPreferencesScreen(),
         ),
         GoRoute(
+          path: '/app/support',
+          builder: (context, state) => const ContactScreen(),
+        ),
+        GoRoute(
           path: '/app/contact',
           builder: (context, state) => const ContactScreen(),
         ),
@@ -412,6 +422,7 @@ class VehicleVitalsApp extends StatelessWidget {
           path: '/email-preferences',
           redirect: (context, state) => '/app/email-preferences',
         ),
+        GoRoute(path: '/support', redirect: (context, state) => '/app/support'),
         GoRoute(path: '/contact', redirect: (context, state) => '/app/contact'),
         GoRoute(path: '/privacy', redirect: (context, state) => '/app/privacy'),
         GoRoute(path: '/terms', redirect: (context, state) => '/app/terms'),

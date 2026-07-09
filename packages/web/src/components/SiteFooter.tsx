@@ -21,7 +21,7 @@ const appNavLinks = [
 
 const supportLinks = [
   { label: 'Help', to: '/help' },
-  { label: 'Support', to: '/contact' },
+  { label: 'Support', to: '/support' },
   { label: 'Privacy', to: '/privacy' },
   { label: 'Terms', to: '/terms' },
 ];
@@ -68,7 +68,8 @@ export default function SiteFooter() {
             className="inline-flex no-underline text-white shrink-0"
           >
             <StackedVLogo
-              size={30}
+              size={33}
+              compact
               showText
               color="#ffffff"
               accent="#14b8a6"
