@@ -1,3 +1,10 @@
+int _toInt(dynamic value, [int fallback = 0]) {
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  if (value is String) return int.tryParse(value.trim()) ?? fallback;
+  return fallback;
+}
+
 class Vehicle {
   final String vin;
   final String make;
@@ -28,6 +35,13 @@ class Vehicle {
   final Map<String, dynamic>? documentPortfolio;
   final DateTime? createdAt;
   final DateTime? updatedAt;
+  // Server-precomputed health forecast (see
+  // packages/functions/src/vehicleHealth.provider.ts) — read-only,
+  // deliberately excluded from toMap() since the client never writes it;
+  // the Firestore trigger recomputes it whenever the vehicle or its
+  // maintenance history changes. See VehicleHealthCalculator.resolveSnapshot
+  // for the freshness check + local-fallback logic that consumes this.
+  final Map<String, dynamic>? vehicleHealthSnapshot;
 
   Vehicle({
     required this.vin,
@@ -59,6 +73,7 @@ class Vehicle {
     this.documentPortfolio,
     this.createdAt,
     this.updatedAt,
+    this.vehicleHealthSnapshot,
   });
 
   factory Vehicle.fromMap(Map<String, dynamic> map) {
@@ -66,10 +81,10 @@ class Vehicle {
       vin: map['vin'] ?? '',
       make: map['make'] ?? '',
       model: map['model'] ?? '',
-      year: map['year'] ?? 0,
-      mileage: map['mileage'] ?? 0,
+      year: _toInt(map['year']),
+      mileage: _toInt(map['mileage']),
       vehicleStatus: (map['vehicleStatus'] ?? 'active').toString(),
-      recallsCount: map['recallsCount'] ?? 0,
+      recallsCount: _toInt(map['recallsCount']),
       recallsSource: map['recallsSource'],
       engineType: map['engineType'],
       bodyClass: map['bodyClass'],
@@ -100,6 +115,9 @@ class Vehicle {
           : null,
       createdAt: map['createdAt']?.toDate(),
       updatedAt: map['updatedAt']?.toDate(),
+      vehicleHealthSnapshot: map['vehicleHealthSnapshot'] is Map
+          ? Map<String, dynamic>.from(map['vehicleHealthSnapshot'] as Map)
+          : null,
     );
   }
 
@@ -175,6 +193,7 @@ class Vehicle {
     Map<String, dynamic>? documentPortfolio,
     DateTime? createdAt,
     DateTime? updatedAt,
+    Map<String, dynamic>? vehicleHealthSnapshot,
   }) {
     return Vehicle(
       vin: vin ?? this.vin,
@@ -206,6 +225,8 @@ class Vehicle {
       documentPortfolio: documentPortfolio ?? this.documentPortfolio,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      vehicleHealthSnapshot:
+          vehicleHealthSnapshot ?? this.vehicleHealthSnapshot,
     );
   }
 
@@ -234,6 +255,43 @@ class Vehicle {
       for (final item in items) {
         if (item is Map &&
             item['required'] == true &&
+            item['status'] == 'ready') {
+          count += 1;
+        }
+      }
+    }
+
+    return count;
+  }
+
+  // Mirrors web's optionalTotal/optionalComplete on getPortfolioRequiredProgress
+  // — surfaced alongside the required count so "how complete are my records"
+  // isn't understated by only counting required items.
+  int get optionalPortfolioItemCount {
+    final categories = (documentPortfolio?['categories'] as List?) ?? [];
+    var count = 0;
+
+    for (final category in categories) {
+      final items = (category is Map ? category['items'] as List? : null) ?? [];
+      for (final item in items) {
+        if (item is Map && item['required'] != true) {
+          count += 1;
+        }
+      }
+    }
+
+    return count;
+  }
+
+  int get completedOptionalPortfolioItemCount {
+    final categories = (documentPortfolio?['categories'] as List?) ?? [];
+    var count = 0;
+
+    for (final category in categories) {
+      final items = (category is Map ? category['items'] as List? : null) ?? [];
+      for (final item in items) {
+        if (item is Map &&
+            item['required'] != true &&
             item['status'] == 'ready') {
           count += 1;
         }

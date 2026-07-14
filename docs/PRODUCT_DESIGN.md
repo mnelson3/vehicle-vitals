@@ -22,13 +22,13 @@ This document describes product vision, persona definitions, tier structure, UX 
 
 **Tagline**: "One garage for every vehicle record, reminder, and repair cost."
 
-**Positioning**: Vehicle Vitals is a cross-platform vehicle management platform that lets owners track service history, plan upcoming maintenance, and build a credible ownership record — across personal cars, shared household vehicles, and light business fleets.
+**Positioning**: Vehicle Vitals is a cross-platform vehicle management platform that lets owners track service history, plan upcoming maintenance, and build a credible ownership record — across personal vehicles, shared household vehicles, and light business fleets.
 
 **Core value propositions**:
 
 - **Proof when you need it**: Maintenance history for resale conversations, warranty claims, insurance discussions, and mechanic visits. A clean record makes every ownership moment more confident.
 - **Fewer missed service moments**: Visibility into upcoming work before it becomes urgent or expensive. Planning beats reacting.
-- **Plans that grow with the garage**: The same product works from a first car to a household fleet to a light business — tiered to match the level of coordination needed.
+- **Plans that grow with the garage**: The same product works from a first vehicle to a household fleet to a light business — tiered to match the level of coordination needed.
 
 ---
 
@@ -38,11 +38,11 @@ Vehicle Vitals serves five core personas. Each has a distinct pain point, outcom
 
 | ID | Nav label | Title | Pain | Outcome | Tier path |
 |---|---|---|---|---|---|
-| `owners` | For Owners | Responsible owner | Records scattered; no clear service history | Keep one car reliable and documented | Free → Pro |
-| `households` | For Households | Household garage | Multiple vehicles, multiple drivers, no coordination | Coordinate every vehicle in the family | Pro |
-| `new-drivers` | New Drivers | New driver / new owner | Unfamiliar with maintenance; uncertain what to do next | Build confidence with plain-language guidance | Free → Pro |
-| `diy-maintainers` | DIY | DIY maintainer | No good way to document self-performed work | Document the work you do yourself, with receipts | Pro → Premium |
-| `light-fleets` | Light Fleets | Light fleet | Vehicle spreadsheets; no operating visibility | Replace spreadsheets with real fleet visibility | Premium → Enterprise |
+| `owners` | Ownership Records | Ownership records | Records scattered; no clear service history | Keep every service record ready when it matters | Free → Pro |
+| `households` | Shared Garage | Shared garage | Multiple vehicles, multiple drivers, no coordination | Coordinate every vehicle in one shared garage | Pro |
+| `new-drivers` | Guided Setup | Guided setup | Unfamiliar with maintenance; uncertain what to do next | Know what to track from day one | Free → Pro |
+| `diy-maintainers` | Hands-On Maintenance | Hands-on maintenance | No good way to document self-performed work | Document the work you do yourself, with receipts | Pro → Premium |
+| `light-fleets` | Work Vehicles | Work vehicles | Vehicle spreadsheets; no operating visibility | Keep business vehicles ready, documented, and accountable | Premium → Enterprise |
 
 Persona detail pages live at `/personas/:id`. Each page shows the pain/outcome narrative, a 3-step workflow, a recommended plan path, and a link to the relevant feature demo.
 
@@ -89,10 +89,10 @@ Legend:
 
 | Tier | Price | Vehicles | Tagline | Primary audience |
 |---|---|---|---|---|
-| **Free** | Free | 2 | Learn and document | First-time users, single-car owners exploring the product |
-| **Pro** | $2.99/month | 10 | Plan and coordinate | Households, active owners who want planning and calendar sync |
-| **Premium** | $6.99/month | 25 | Forecast and automate | DIY maintainers, power users who want AI, exports, and API access |
-| **Enterprise** | Custom | 25+ | Govern and integrate | Light fleets and business operators who need policy controls and integrations |
+| **Free** | Free | 2 | Learn and document | First-time users, single-vehicle owners exploring the product |
+| **Pro** | $2.99/month | 10 | Plan and coordinate | Shared garages and active owners who want planning and calendar sync |
+| **Premium** | $6.99/month | 25 | Forecast and automate | Hands-on maintainers, power users who want AI, exports, and API access |
+| **Enterprise** | Custom | 25+ | Govern and integrate | Work vehicle operators and business users who need policy controls and integrations |
 
 ### Feature Comparison
 
@@ -238,9 +238,9 @@ See [`docs/MONETIZATION_STRATEGY.md`](MONETIZATION_STRATEGY.md) for detailed ad 
 
 ---
 
-### Tertiary User: "Young Car Owner"
+### Tertiary User: "Young Vehicle Owner"
 
-**Scenario**: First car, learning maintenance responsibility
+**Scenario**: First vehicle, learning maintenance responsibility
 
 1. Opens app, unsure what "O2 sensor" means
 2. Views maintenance details with plain-language explanations
@@ -620,7 +620,7 @@ Oil Change: $35-55 (avg from community)
 
 **Apple-Specific Features**:
 
-- HomeKit integration (future: car status on Apple HomeKit)
+- HomeKit integration (future: vehicle status on Apple HomeKit)
 - Siri Shortcuts (view maintenance status via voice)
 - Apple Wallet (vehicle registration, insurance card)
 - iCloud sync (across user's devices)
@@ -747,6 +747,93 @@ Budget & Insights
 
 ---
 
+## 🧭 Capability Vocabulary
+
+The sketch above predates the capability and information-architecture
+refactor (`docs/CAPABILITY_ARCHITECTURE_REFACTOR_PROMPT.md`) and is kept as
+historical context, not a literal current map. The canonical vocabulary
+below is what web and mobile navigation, analytics, and Help are actually
+built against today.
+
+### Canonical capabilities
+
+| Capability ID | Full label | Compact label (mobile) | Web route | Mobile route |
+|---|---|---|---|---|
+| `getting_started` | Getting Started | Getting Started | `/getting-started` | *(no single screen — onboarding entry point)* |
+| `garage` | Garage | Garage | `/app` | `/app` |
+| `service_history` | Service History | History | `/app/timeline` | `/app/timeline` |
+| `maintenance_plan` | Maintenance Plan | Plan | `/app/upcoming` | `/app/upcoming` |
+| `shops_services` | Shops & Services | Shops & Services | `/app/providers` | `/app/service-providers` |
+| `account` | Account | Account | `/app/profile` | `/app/profile` |
+
+Defined once per platform — `packages/web/src/data/capabilities.ts` (TS) and
+`packages/mobile/lib/data/capabilities.dart` (Dart) — deliberately as two
+parallel plain-literal definitions rather than a single generated artifact,
+kept in sync by a contract test
+(`packages/web/src/data/__tests__/capabilities.contract.test.ts`) that reads
+the Dart file as text and asserts a 1:1 match against the TS array.
+
+### Public vs. authenticated navigation
+
+- **Logged-out (public) nav**: persona links (Ownership Records, Shared
+  Garage, Guided Setup, Hands-On Maintenance, Work Vehicles) plus Login/Sign
+  Up. Pricing and Product Tour live in the footer, not the header.
+- **Authenticated nav** (header and footer): every capability with
+  `surfaces.authNav: true`, in `order` — Getting Started, Garage, Service
+  History, Maintenance Plan, Shops & Services, Account. Getting Started and
+  Product Tour are evaluation-stage content and are hidden from the
+  authenticated footer's Product group (only Pricing remains there) since an
+  authenticated user has nothing left to "evaluate" — Getting Started is
+  still reachable from the authenticated nav itself.
+- **Mobile bottom nav** stays at exactly 4 items (Garage, History, Plan,
+  Account — `surfaces.mobileBottomNav: true`). Shops & Services and Getting
+  Started are deliberately *not* bottom-nav items; they're reached through
+  contextual entry points instead (Garage app bar, Settings, and the
+  maintenance add/edit flow for Shops & Services; the onboarding flow and
+  header/footer links for Getting Started).
+
+### Terminology boundary: display language vs. stable identifiers
+
+The capability vocabulary is a **presentation-layer** rename. It never
+touches persisted data, backend contracts, or existing route paths — only
+what's rendered on screen. Identifiers that stay internal, unchanged, and
+must never be renamed to match display copy:
+
+- Firestore field `preferredProviders`
+- Callable `getLocalServiceProvidersCallable`
+- Mobile class `LocalProvidersService`
+- Persisted enum value `performedBy: 'mechanic'` (union: `'self' | 'mechanic' | 'business'`)
+- Every existing route path (legacy paths redirect via `<Navigate replace />` rather than being renamed)
+
+Help content follows the same boundary: FAQ entries use current display
+language, but retired terms (Timeline, Upcoming Tasks, Mechanic, Profile,
+Service Providers) are kept searchable via a `legacyTerms` field so users
+who still think in the old vocabulary can find the right answer, without
+those terms reappearing as display copy.
+
+### Getting Started completion model
+
+The spec's 6 onboarding milestones are shipped as **static/contextual copy
+only** — no new persisted per-milestone completion state, no feature flag.
+Two milestones (account created, first vehicle added) already have a live,
+Firestore-derived signal; the rest (including "reviewed Service History")
+have no live-derivable signal anywhere in the data model today. Building a
+partial checklist — some steps checkmarked live, others permanently
+unchecked — would be more confusing than a plain static list. The existing
+single `onboarding_completed_$uid` boolean (SharedPreferences) remains the
+only persisted onboarding state.
+
+### Mobile analytics: explicitly deferred
+
+Mobile has no analytics infrastructure today (no `firebase_analytics`
+dependency, no event-logging wrapper, no `logEvent` calls anywhere in
+`packages/mobile`). The web-side `capability_id` analytics dimension added
+alongside this vocabulary is web-only; adding mobile analytics is a
+separate, larger initiative to be scoped on its own rather than a
+side-effect of a navigation rename.
+
+---
+
 ## 🎯 Feature Prioritization
 
 | Feature                    | Impact   | Effort    | Priority | Delivery Status               |
@@ -770,7 +857,7 @@ Budget & Insights
 
 ### Pre-Launch
 
-- ✅ Beta testing with target users (responsible car owners)
+- ✅ Beta testing with target users (responsible vehicle owners)
 - ✅ VIN lookup accuracy validation (edge cases, older vehicles)
 - ✅ Cross-platform testing (iOS, Android, web)
 - ✅ App Store/Play Store listings and screenshots

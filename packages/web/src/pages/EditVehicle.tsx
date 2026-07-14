@@ -1,6 +1,5 @@
 // -----------------------------
 // File: web/pages/EditVehicle.jsx
-import { getUpcomingMaintenance } from '@vehicle-vitals/shared';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import UpgradeModal from '../components/UpgradeModal';
@@ -30,17 +29,21 @@ import {
 } from '../shared/useMonetization';
 import { analyzeAttachmentText } from '../utils/attachmentAnalysisService';
 import { createMaintenanceCalendarEvent } from '../utils/calendarService';
+import {
+  formatServiceTypeLabel,
+  type MaintenancePlanItem,
+} from '../utils/maintenancePlan';
 import { findVehiclePhotoFromWeb } from '../utils/vehiclePhotoService';
-import { lookupVin } from '../utils/vehicleService';
+import { getMaintenancePlan, lookupVin } from '../utils/vehicleService';
 import { transferVehicle } from '../utils/vehicleTransferService';
 import {
   detectVehicleIdentifierType,
   getVinLookupValidationError,
-} from '../utils/vinValidation';
+} from '@vehicle-vitals/shared/vinValidation';
 
 const VEHICLE_TYPE_OPTIONS = [
-  'Car',
-  'Truck',
+  'Passenger Vehicle',
+  'Commercial Vehicle',
   'Motorcycle',
   'Recreational Vehicle (RV)',
   'Boat',
@@ -121,7 +124,18 @@ interface MaintenanceEntry {
   notes: string;
   cost: string;
   date: string;
-  performedBy?: 'self' | 'mechanic' | 'business';
+  performedBy?:
+    | 'self'
+    | 'repair_shop'
+    | 'dealership'
+    | 'body_shop'
+    | 'car_wash'
+    | 'detailer'
+    // Retired categories — still present on existing records; new entries
+    // never write these.
+    | 'mechanic'
+    | 'business';
+  providerName?: string;
   coverage?: 'parts_only' | 'parts_and_labor';
   attachments?: Array<{
     name: string;
@@ -144,8 +158,21 @@ function formatPerformedBy(value?: string) {
   switch (value) {
     case 'self':
       return 'Self-service';
+    case 'repair_shop':
+      return 'Repair shop';
+    case 'dealership':
+      return 'Dealership';
+    case 'body_shop':
+      return 'Body shop';
+    case 'car_wash':
+      return 'Car wash';
+    case 'detailer':
+      return 'Detailer';
+    // Retired categories, kept for entries recorded before this taxonomy
+    // shipped — new entries never write these.
     case 'business':
       return 'Business-maintained';
+    case 'mechanic':
     default:
       return 'Mechanic';
   }
@@ -481,7 +508,7 @@ export default function EditVehicle() {
   if (!form)
     return (
       <div className="w-full max-w-7xl mx-auto px-4 sm:px-5 py-5">
-        <p className="text-charcoal-600 dark:text-cream-300">Loading...</p>
+        <p className="text-slate-600 dark:text-slate-300">Loading...</p>
       </div>
     );
 
@@ -489,10 +516,10 @@ export default function EditVehicle() {
     <div className="w-full max-w-7xl mx-auto px-4 sm:px-5 py-5">
       <div className="flex items-start justify-between gap-4 mb-6">
         <div>
-          <h2 className="font-serif font-bold text-3xl text-charcoal-800 dark:text-cream-100 m-0">
+          <h2 className="font-serif font-bold text-3xl text-slate-800 dark:text-slate-100 m-0">
             Edit Vehicle
           </h2>
-          <p className="text-charcoal-600 dark:text-cream-300 mt-2 mb-0">
+          <p className="text-slate-600 dark:text-slate-300 mt-2 mb-0">
             {form.year} {form.make} {form.model} • {form.vin}
           </p>
         </div>
@@ -697,12 +724,12 @@ export default function EditVehicle() {
                 placeholder="Plate number (optional)"
                 className={`w-full px-3 py-2 border rounded-md bg-white dark:bg-slate-900 dark:text-slate-100 ${
                   plateValidationError
-                    ? 'border-red-300 dark:border-red-600'
+                    ? 'border-danger-300 dark:border-danger-600'
                     : 'border-slate-300 dark:border-slate-600'
                 }`}
               />
               {plateValidationError && (
-                <p className="text-xs text-red-600 dark:text-red-400 mt-1">
+                <p className="text-xs text-danger-600 dark:text-danger-400 mt-1">
                   {plateValidationError}
                 </p>
               )}
@@ -768,7 +795,7 @@ export default function EditVehicle() {
                 type="button"
                 onClick={handleTransfer}
                 disabled={transferBusy}
-                className="w-full px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium rounded-md transition-colors disabled:opacity-60"
+                className="w-full px-3 py-2 bg-warning-600 hover:bg-warning-700 text-white text-sm font-medium rounded-md transition-colors disabled:opacity-60"
               >
                 {transferBusy ? 'Transferring...' : 'Transfer Vehicle'}
               </button>
@@ -831,7 +858,7 @@ export default function EditVehicle() {
               </button>
               <button
                 onClick={handleDelete}
-                className="w-full px-3 py-2 bg-red-100 hover:bg-red-200 text-red-700 text-sm font-medium rounded-md border border-red-300 transition-colors"
+                className="w-full px-3 py-2 bg-danger-100 hover:bg-danger-200 text-danger-700 text-sm font-medium rounded-md border border-danger-300 transition-colors"
               >
                 Delete Vehicle
               </button>
@@ -887,7 +914,7 @@ export default function EditVehicle() {
                     <h4 className="font-medium text-slate-900 dark:text-slate-100 text-sm m-0">
                       Active Recalls
                     </h4>
-                    <span className="inline-block px-2 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">
+                    <span className="inline-block px-2 py-1 rounded-full text-xs font-medium bg-warning-100 text-warning-800 dark:bg-warning-900/40 dark:text-warning-200">
                       {form.recallsCount || 0} Recall
                       {form.recallsCount === 1 ? '' : 's'}
                     </span>
@@ -900,7 +927,7 @@ export default function EditVehicle() {
                   )}
 
                   {form.recallsCount === 0 ? (
-                    <p className="text-sm text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-900/20 rounded p-2">
+                    <p className="text-sm text-accent-700 dark:text-accent-300 bg-accent-50 dark:bg-accent-900/20 rounded p-2">
                       No active recalls found for this vehicle.
                     </p>
                   ) : form.recallsItems && form.recallsItems.length > 0 ? (
@@ -959,7 +986,7 @@ export default function EditVehicle() {
 
       {/* Maintenance Section */}
       <div className="mt-8">
-        <h3 className="font-serif font-bold text-2xl text-charcoal-800 dark:text-cream-100 mb-4">
+        <h3 className="font-serif font-bold text-2xl text-slate-800 dark:text-slate-100 mb-4">
           Maintenance
         </h3>
         {vin && <MaintenanceList vin={vin} prefill={maintenancePrefill} />}
@@ -994,7 +1021,8 @@ function MaintenanceList({
     title: '',
     notes: '',
     cost: '',
-    performedBy: 'mechanic',
+    performedBy: 'repair_shop',
+    providerName: '',
     coverage: 'parts_and_labor',
     attachments: [] as Array<{
       name: string;
@@ -1016,6 +1044,9 @@ function MaintenanceList({
     }>,
   });
   const [vehicle, setVehicle] = useState<Vehicle | null>(null);
+  const [upcomingMaintenancePlan, setUpcomingMaintenancePlan] = useState<{
+    items: MaintenancePlanItem[];
+  } | null>(null);
   const [calendarTarget, setCalendarTarget] = useState<
     'google' | 'apple' | 'ics'
   >('google');
@@ -1126,6 +1157,25 @@ function MaintenanceList({
     };
     load();
   }, [vin]);
+
+  useEffect(() => {
+    if (!vehicle?.make || !vehicle?.model || !vehicle?.mileage) {
+      setUpcomingMaintenancePlan(null);
+      return;
+    }
+    let isActive = true;
+    getMaintenancePlan(vin, vehicle.mileage, vehicle.make, vehicle.model)
+      .then(plan => {
+        if (isActive) setUpcomingMaintenancePlan(plan);
+      })
+      .catch(error => {
+        console.warn('Unable to load maintenance plan', vin, error);
+        if (isActive) setUpcomingMaintenancePlan(null);
+      });
+    return () => {
+      isActive = false;
+    };
+  }, [vin, vehicle?.make, vehicle?.model, vehicle?.mileage]);
 
   useEffect(() => {
     if (!prefill) return;
@@ -1493,7 +1543,8 @@ function MaintenanceList({
         title: '',
         notes: '',
         cost: '',
-        performedBy: 'mechanic',
+        performedBy: 'repair_shop',
+        providerName: '',
         coverage: 'parts_and_labor',
         attachments: [],
       });
@@ -1502,9 +1553,18 @@ function MaintenanceList({
     }
   };
 
-  const upcomingMaintenance = vehicle
-    ? getUpcomingMaintenance(vehicle.make, vehicle.model, vehicle.mileage)
-    : [];
+  const currentMileageForPlan = parseInt(vehicle?.mileage || '0', 10) || 0;
+  const upcomingMaintenance: Array<{
+    description: string;
+    nextDueMileage: number;
+    milesUntilDue: number;
+  }> = (upcomingMaintenancePlan?.items ?? []).map(
+    (item: MaintenancePlanItem) => ({
+      description: formatServiceTypeLabel(item.serviceType),
+      nextDueMileage: item.nextDueMileage,
+      milesUntilDue: Math.max(0, item.nextDueMileage - currentMileageForPlan),
+    })
+  );
   const hasPendingAttachmentAnalysis = form.attachments.some(
     attachment =>
       attachment.analysisStatus === 'uploading' ||
@@ -1598,18 +1658,18 @@ function MaintenanceList({
   };
 
   return (
-    <div className="bg-white dark:bg-charcoal-800 rounded-lg shadow-md p-6">
+    <div className="bg-white dark:bg-slate-800 rounded-lg shadow-md p-6">
       {/* Manufacturer Schedules Section */}
       {vehicle && (
-        <div className="mb-6 border-b border-charcoal-200 dark:border-charcoal-600 pb-4">
+        <div className="mb-6 border-b border-slate-200 dark:border-slate-600 pb-4">
           <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-            <h4 className="font-serif font-bold text-xl text-charcoal-800 dark:text-cream-100">
+            <h4 className="font-serif font-bold text-xl text-slate-800 dark:text-slate-100">
               Recommended Maintenance
             </h4>
             <div className="flex items-center gap-2">
               <label
                 htmlFor="calendarTarget"
-                className="text-sm text-charcoal-700 dark:text-cream-300"
+                className="text-sm text-slate-700 dark:text-slate-300"
               >
                 Calendar
               </label>
@@ -1621,7 +1681,7 @@ function MaintenanceList({
                     e.target.value as 'google' | 'apple' | 'ics'
                   )
                 }
-                className="px-2 py-1 border border-charcoal-300 dark:border-charcoal-600 rounded-md text-sm dark:bg-charcoal-700 dark:text-cream-100"
+                className="px-2 py-1 border border-slate-300 dark:border-slate-600 rounded-md text-sm dark:bg-slate-700 dark:text-slate-100"
                 disabled={!hasCalendarSync}
               >
                 <option value="google">Google</option>
@@ -1635,7 +1695,7 @@ function MaintenanceList({
               Calendar sync is available on Pro and Premium plans.
             </p>
           )}
-          <p className="text-sm text-charcoal-600 dark:text-cream-300 mb-3">
+          <p className="text-sm text-slate-600 dark:text-slate-300 mb-3">
             {vehicle.make} {vehicle.model} ({vehicle.year}) • Current mileage:{' '}
             {vehicle.mileage}
           </p>
@@ -1646,25 +1706,25 @@ function MaintenanceList({
                 .map((item: any, index: number) => (
                   <div
                     key={index}
-                    className="flex items-center justify-between p-3 bg-charcoal-50 dark:bg-charcoal-700 rounded-md"
+                    className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-700 rounded-md"
                   >
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 bg-oxblood-100 dark:bg-oxblood-900 rounded-full flex items-center justify-center">
-                        <span className="text-xs font-bold text-oxblood-600 dark:text-oxblood-300">
+                      <div className="w-8 h-8 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center">
+                        <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
                           !
                         </span>
                       </div>
                       <div>
-                        <div className="font-medium text-charcoal-800 dark:text-cream-100">
+                        <div className="font-medium text-slate-800 dark:text-slate-100">
                           {item.description}
                         </div>
-                        <div className="text-sm text-charcoal-600 dark:text-cream-300">
+                        <div className="text-sm text-slate-600 dark:text-slate-300">
                           Due: {item.nextDueMileage} miles ({item.milesUntilDue}{' '}
                           miles)
                         </div>
                       </div>
                     </div>
-                    <div className="text-xs text-charcoal-500 dark:text-cream-400 text-right">
+                    <div className="text-xs text-slate-500 dark:text-slate-400 text-right">
                       <div>{item.frequency}</div>
                       <button
                         onClick={() => handleAddToCalendar(item)}
@@ -1677,7 +1737,7 @@ function MaintenanceList({
                 ))}
             </div>
           ) : (
-            <p className="text-sm text-charcoal-500 dark:text-cream-400 italic">
+            <p className="text-sm text-slate-500 dark:text-slate-400 italic">
               No manufacturer schedules available for this vehicle.
             </p>
           )}
@@ -1685,7 +1745,7 @@ function MaintenanceList({
       )}
 
       <div className="flex justify-between items-center mb-4">
-        <h3 className="font-serif font-bold text-xl text-charcoal-800 dark:text-cream-100">
+        <h3 className="font-serif font-bold text-xl text-slate-800 dark:text-slate-100">
           Maintenance History
         </h3>
         <div className="flex gap-2">
@@ -1712,23 +1772,23 @@ function MaintenanceList({
         {entries.map(e => (
           <li
             key={e.id}
-            className="border-b border-charcoal-200 dark:border-charcoal-600 pb-3"
+            className="border-b border-slate-200 dark:border-slate-600 pb-3"
           >
             <div className="flex justify-between items-start mb-1">
-              <strong className="text-charcoal-800 dark:text-cream-100">
+              <strong className="text-slate-800 dark:text-slate-100">
                 {e.title}
               </strong>
-              <span className="text-sm text-charcoal-600 dark:text-cream-300">
+              <span className="text-sm text-slate-600 dark:text-slate-300">
                 {e.date?.split('T')[0]}
               </span>
             </div>
-            <div className="text-sm text-charcoal-600 dark:text-cream-300 mb-1">
+            <div className="text-sm text-slate-600 dark:text-slate-300 mb-1">
               ${e.cost}
             </div>
-            <div className="text-xs text-charcoal-500 dark:text-cream-400">
+            <div className="text-xs text-slate-500 dark:text-slate-400">
               {formatPerformedBy(e.performedBy)} • {formatCoverage(e.coverage)}
             </div>
-            <div className="text-xs text-charcoal-500 dark:text-cream-400">
+            <div className="text-xs text-slate-500 dark:text-slate-400">
               {e.notes}
             </div>
           </li>
@@ -1737,9 +1797,9 @@ function MaintenanceList({
 
       <div
         ref={addEntryRef}
-        className="border-t border-charcoal-200 dark:border-charcoal-600 pt-4"
+        className="border-t border-slate-200 dark:border-slate-600 pt-4"
       >
-        <h4 className="font-serif font-bold text-xl text-charcoal-800 dark:text-cream-100 mb-4">
+        <h4 className="font-serif font-bold text-xl text-slate-800 dark:text-slate-100 mb-4">
           Add Entry
         </h4>
         {prefill && !prefillDismissed && (
@@ -1770,7 +1830,7 @@ function MaintenanceList({
                 value={form.title}
                 onChange={handleChange}
                 aria-label="Maintenance Title"
-                className="w-full px-3 py-2 border border-charcoal-300 dark:border-charcoal-600 rounded-md focus:outline-none focus:ring-2 focus:ring-oxblood-500 focus:border-oxblood-500 dark:bg-charcoal-700 dark:text-cream-100"
+                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-slate-500 focus:border-slate-500 dark:bg-slate-700 dark:text-slate-100"
               />
             </div>
             <div className="w-24">
@@ -1784,16 +1844,16 @@ function MaintenanceList({
                 value={form.cost}
                 onChange={handleChange}
                 aria-label="Cost"
-                className="w-full px-3 py-2 border border-charcoal-300 dark:border-charcoal-600 rounded-md focus:outline-none focus:ring-2 focus:ring-oxblood-500 focus:border-oxblood-500 dark:bg-charcoal-700 dark:text-cream-100"
+                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-slate-500 focus:border-slate-500 dark:bg-slate-700 dark:text-slate-100"
               />
             </div>
           </div>
-          <div className="rounded-md border border-charcoal-200 dark:border-charcoal-600 bg-charcoal-50/70 dark:bg-charcoal-700/40 p-3">
+          <div className="rounded-md border border-slate-200 dark:border-slate-600 bg-slate-50/70 dark:bg-slate-700/40 p-3">
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
                 <label
                   htmlFor="performedBy"
-                  className="mb-1 block text-sm font-medium text-charcoal-700 dark:text-cream-200"
+                  className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-200"
                 >
                   Who did it
                 </label>
@@ -1803,17 +1863,20 @@ function MaintenanceList({
                   value={form.performedBy}
                   onChange={handleChange}
                   aria-label="Who did it"
-                  className="w-full px-3 py-2 border border-charcoal-300 dark:border-charcoal-600 rounded-md focus:outline-none focus:ring-2 focus:ring-oxblood-500 focus:border-oxblood-500 dark:bg-charcoal-700 dark:text-cream-100"
+                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-slate-500 focus:border-slate-500 dark:bg-slate-700 dark:text-slate-100"
                 >
                   <option value="self">Self-service</option>
-                  <option value="mechanic">Mechanic</option>
-                  <option value="business">Business-maintained</option>
+                  <option value="repair_shop">Repair shop</option>
+                  <option value="dealership">Dealership</option>
+                  <option value="body_shop">Body shop</option>
+                  <option value="car_wash">Car wash</option>
+                  <option value="detailer">Detailer</option>
                 </select>
               </div>
               <div>
                 <label
                   htmlFor="coverage"
-                  className="mb-1 block text-sm font-medium text-charcoal-700 dark:text-cream-200"
+                  className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-200"
                 >
                   Receipt type
                 </label>
@@ -1823,12 +1886,34 @@ function MaintenanceList({
                   value={form.coverage}
                   onChange={handleChange}
                   aria-label="Receipt type"
-                  className="w-full px-3 py-2 border border-charcoal-300 dark:border-charcoal-600 rounded-md focus:outline-none focus:ring-2 focus:ring-oxblood-500 focus:border-oxblood-500 dark:bg-charcoal-700 dark:text-cream-100"
+                  className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-slate-500 focus:border-slate-500 dark:bg-slate-700 dark:text-slate-100"
                 >
                   <option value="parts_only">Parts only</option>
                   <option value="parts_and_labor">Parts and labor</option>
                 </select>
               </div>
+              {form.performedBy !== 'self' && (
+                <div className="sm:col-span-2">
+                  <label
+                    htmlFor="providerName"
+                    className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-200"
+                  >
+                    Shop or professional
+                  </label>
+                  <input
+                    id="providerName"
+                    name="providerName"
+                    placeholder="e.g. Downtown Auto Repair"
+                    value={form.providerName}
+                    onChange={handleChange}
+                    aria-label="Shop or professional"
+                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-slate-500 focus:border-slate-500 dark:bg-slate-700 dark:text-slate-100"
+                  />
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    Shown in Shops &amp; Services under "Places You've Used."
+                  </p>
+                </div>
+              )}
             </div>
           </div>
           <div>
@@ -1838,11 +1923,11 @@ function MaintenanceList({
               value={form.notes}
               onChange={handleChange}
               rows={3}
-              className="w-full px-3 py-2 border border-charcoal-300 dark:border-charcoal-600 rounded-md focus:outline-none focus:ring-2 focus:ring-oxblood-500 focus:border-oxblood-500 dark:bg-charcoal-700 dark:text-cream-100"
+              className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-slate-500 focus:border-slate-500 dark:bg-slate-700 dark:text-slate-100"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-charcoal-700 dark:text-cream-200 mb-2">
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-2">
               Photos/Receipts
             </label>
             {!hasAiAnalysis && (
@@ -1858,15 +1943,15 @@ function MaintenanceList({
               onChange={handleFileChange}
               disabled={uploading}
               aria-label="Upload photos or receipts"
-              className="w-full px-3 py-2 border border-charcoal-300 dark:border-charcoal-600 rounded-md focus:outline-none focus:ring-2 focus:ring-oxblood-500 focus:border-oxblood-500 dark:bg-charcoal-700 dark:text-cream-100 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-oxblood-50 file:text-oxblood-700 hover:file:bg-oxblood-100"
+              className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-slate-500 focus:border-slate-500 dark:bg-slate-700 dark:text-slate-100 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-slate-100 file:text-slate-800 hover:file:bg-slate-200"
             />
             {uploading && (
-              <p className="text-sm text-charcoal-600 dark:text-cream-300 mt-1">
+              <p className="text-sm text-slate-600 dark:text-slate-300 mt-1">
                 Uploading attachments...
               </p>
             )}
             {analysisBusy && (
-              <p className="text-sm text-charcoal-600 dark:text-cream-300 mt-1">
+              <p className="text-sm text-slate-600 dark:text-slate-300 mt-1">
                 Rechecking attachment analysis...
               </p>
             )}
@@ -1878,7 +1963,7 @@ function MaintenanceList({
           </div>
           {form.attachments && form.attachments.length > 0 && (
             <div>
-              <h5 className="text-sm font-medium text-charcoal-700 dark:text-cream-200 mb-2">
+              <h5 className="text-sm font-medium text-slate-700 dark:text-slate-200 mb-2">
                 Attachments
               </h5>
               <div className="mb-2 flex flex-wrap items-center gap-2 text-[11px]">
@@ -1886,7 +1971,7 @@ function MaintenanceList({
                   Total: {form.attachments.length}
                 </span>
                 {attachmentStatusSummary.inProgress > 0 && (
-                  <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+                  <span className="px-2 py-0.5 rounded-full bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-300">
                     In progress: {attachmentStatusSummary.inProgress}
                   </span>
                 )}
@@ -1896,12 +1981,12 @@ function MaintenanceList({
                   </span>
                 )}
                 {attachmentStatusSummary.complete > 0 && (
-                  <span className="px-2 py-0.5 rounded-full bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300">
+                  <span className="px-2 py-0.5 rounded-full bg-accent-100 text-accent-700 dark:bg-accent-900/30 dark:text-accent-300">
                     Complete: {attachmentStatusSummary.complete}
                   </span>
                 )}
                 {attachmentStatusSummary.failed > 0 && (
-                  <span className="px-2 py-0.5 rounded-full bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300">
+                  <span className="px-2 py-0.5 rounded-full bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300">
                     Retry needed: {attachmentStatusSummary.failed}
                   </span>
                 )}
@@ -1917,7 +2002,7 @@ function MaintenanceList({
                   return (
                     <div
                       key={index}
-                      className="flex items-center justify-between p-2 bg-charcoal-50 dark:bg-charcoal-700 rounded-md border border-charcoal-200 dark:border-charcoal-600"
+                      className="flex items-center justify-between p-2 bg-slate-50 dark:bg-slate-700 rounded-md border border-slate-200 dark:border-slate-600"
                     >
                       <div>
                         <div className="flex items-center gap-2">
@@ -1933,11 +2018,11 @@ function MaintenanceList({
                               {fileDisplay.icon}
                             </span>
                           )}
-                          <span className="text-sm text-charcoal-800 dark:text-cream-100">
+                          <span className="text-sm text-slate-800 dark:text-slate-100">
                             {attachment.name}
                           </span>
                           {attachment.analysisStatus === 'analyzing' && (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-400">
                               <svg
                                 className="w-2.5 h-2.5 animate-spin"
                                 fill="none"
@@ -1966,7 +2051,7 @@ function MaintenanceList({
                             </span>
                           )}
                           {attachment.analysisStatus === 'extracted' && (
-                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium bg-accent-100 text-accent-700 dark:bg-accent-900/30 dark:text-accent-400">
                               ✓ Analysis complete{' '}
                               {typeof attachment.analysis?.confidence ===
                               'number'
@@ -1982,14 +2067,14 @@ function MaintenanceList({
                             )}
                           {attachment.analysisStatus === 'failed' &&
                             attachment.canRetryAnalysis !== false && (
-                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300">
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium bg-danger-100 text-danger-700 dark:bg-danger-900/30 dark:text-danger-300">
                                 Analysis failed
                               </span>
                             )}
                         </div>
                         {attachment.analysisStatus === 'failed' && (
                           <div className="mt-1 flex items-center gap-2">
-                            <p className="text-xs text-red-600 dark:text-red-300 m-0">
+                            <p className="text-xs text-danger-600 dark:text-danger-300 m-0">
                               {attachment.analysisError ||
                                 'Analysis did not complete for this file.'}
                             </p>
@@ -2009,7 +2094,7 @@ function MaintenanceList({
                                 onClick={() =>
                                   void retryAttachmentAnalysis(attachment.path)
                                 }
-                                className="text-xs px-2 py-0.5 rounded border border-red-300 text-red-700 hover:bg-red-50 disabled:opacity-60 disabled:cursor-not-allowed dark:border-red-700 dark:text-red-300 dark:hover:bg-red-900/20"
+                                className="text-xs px-2 py-0.5 rounded border border-danger-300 text-danger-700 hover:bg-danger-50 disabled:opacity-60 disabled:cursor-not-allowed dark:border-danger-700 dark:text-danger-300 dark:hover:bg-danger-900/20"
                               >
                                 Retry
                               </button>
@@ -2020,7 +2105,7 @@ function MaintenanceList({
                           typeof extracted?.totalCost === 'number' ||
                           extracted?.serviceDate ||
                           typeof extracted?.mileage === 'number') && (
-                          <p className="mt-1 text-xs text-charcoal-600 dark:text-cream-300">
+                          <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
                             Detected:
                             {extracted?.serviceType
                               ? ` ${extracted.serviceType}`
@@ -2040,7 +2125,7 @@ function MaintenanceList({
                       <button
                         type="button"
                         onClick={() => removeAttachment(index)}
-                        className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
+                        className="text-danger-600 hover:text-danger-800 dark:text-danger-400 dark:hover:text-danger-300"
                       >
                         ✕
                       </button>
@@ -2053,7 +2138,7 @@ function MaintenanceList({
           <button
             onClick={handleAdd}
             disabled={uploading || analysisBusy || hasPendingAttachmentAnalysis}
-            className="bg-oxblood-600 hover:bg-oxblood-700 disabled:bg-charcoal-400 text-white font-medium py-2 px-4 rounded-md transition-colors duration-200"
+            className="bg-slate-700 hover:bg-slate-800 disabled:bg-slate-400 text-white font-medium py-2 px-4 rounded-md transition-colors duration-200"
           >
             {hasPendingAttachmentAnalysis
               ? 'Waiting for analysis...'

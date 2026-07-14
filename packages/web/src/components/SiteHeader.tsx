@@ -2,6 +2,11 @@ import PropTypes from 'prop-types';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../shared/AuthContext';
 import { isDemonstrationEnvironment } from '../shared/environment';
+import {
+  AUTH_NAV_CAPABILITIES_WITHOUT_GETTING_STARTED,
+  CAPABILITIES_BY_ID,
+  PRODUCT_TOUR_LINK,
+} from '../data/capabilities';
 import { personaPages } from '../data/personas';
 import { trackHeaderNavClick } from '../shared/marketingAnalytics';
 import StackedVLogo from './StackedVLogo';
@@ -26,9 +31,9 @@ export default function SiteHeader({ overlay = false }: SiteHeaderProps) {
           : 'bg-slate-50 dark:bg-slate-900'
       }`}
     >
-      <div className="w-full max-w-7xl mx-auto px-4 sm:px-5 py-3">
+      <div className="site-header-frame w-full max-w-7xl mx-auto px-4 sm:px-5 py-3">
         <nav
-          className={`rounded-xl border px-4 py-2.5 flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between ${
+          className={`site-nav-shell rounded-xl border px-4 py-2.5 flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between ${
             overlay
               ? 'border-white/30 bg-black/15 backdrop-blur-sm'
               : 'border-slate-200 dark:border-slate-700 bg-white/90 dark:bg-slate-800/70 backdrop-blur-sm'
@@ -41,7 +46,7 @@ export default function SiteHeader({ overlay = false }: SiteHeaderProps) {
               className="inline-flex no-underline text-current"
             >
               <StackedVLogo
-                size={85}
+                size={52}
                 compact
                 showText
                 color={overlay ? '#ffffff' : 'currentColor'}
@@ -55,24 +60,52 @@ export default function SiteHeader({ overlay = false }: SiteHeaderProps) {
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg px-2 py-1">
               {isLoggedIn ? (
                 <>
-                  <Link to="/getting-started" className={linkClass} onClick={() => trackHeaderNavClick('Getting Started', '/getting-started')}>
-                    Getting Started
-                  </Link>
-                  <Link to="/app" className={linkClass} onClick={() => trackHeaderNavClick('Garage', '/app')}>
-                    Garage
-                  </Link>
-                  <Link to="/app/profile" className={linkClass} onClick={() => trackHeaderNavClick('Profile', '/app/profile')}>
-                    Profile
-                  </Link>
-                  <Link to="/app/timeline" className={linkClass} onClick={() => trackHeaderNavClick('Timeline', '/app/timeline')}>
-                    Timeline
-                  </Link>
-                  <Link to="/app/upcoming" className={linkClass} onClick={() => trackHeaderNavClick('Upcoming', '/app/upcoming')}>
-                    Upcoming
-                  </Link>
-                  <Link to="/app/providers" className={linkClass} onClick={() => trackHeaderNavClick('Mechanics', '/app/providers')}>
-                    Mechanics
-                  </Link>
+                  <div className="flex items-center gap-x-3 mr-4">
+                    <Link
+                      to={CAPABILITIES_BY_ID.getting_started.webRoute}
+                      className={linkClass}
+                      onClick={() =>
+                        trackHeaderNavClick(
+                          CAPABILITIES_BY_ID.getting_started.fullLabel,
+                          CAPABILITIES_BY_ID.getting_started.webRoute,
+                          CAPABILITIES_BY_ID.getting_started.analyticsId
+                        )
+                      }
+                    >
+                      {CAPABILITIES_BY_ID.getting_started.fullLabel}
+                    </Link>
+                    <Link
+                      to={PRODUCT_TOUR_LINK.to}
+                      className={linkClass}
+                      onClick={() =>
+                        trackHeaderNavClick(
+                          PRODUCT_TOUR_LINK.label,
+                          PRODUCT_TOUR_LINK.to,
+                          PRODUCT_TOUR_LINK.analyticsId
+                        )
+                      }
+                    >
+                      {PRODUCT_TOUR_LINK.label}
+                    </Link>
+                  </div>
+                  {AUTH_NAV_CAPABILITIES_WITHOUT_GETTING_STARTED.map(
+                    capability => (
+                      <Link
+                        key={capability.id}
+                        to={capability.webRoute}
+                        className={linkClass}
+                        onClick={() =>
+                          trackHeaderNavClick(
+                            capability.fullLabel,
+                            capability.webRoute,
+                            capability.analyticsId
+                          )
+                        }
+                      >
+                        {capability.fullLabel}
+                      </Link>
+                    )
+                  )}
                   {supportAccess?.isSuperAdmin && (
                     <Link to="/app/admin" className={linkClass}>
                       Admin
@@ -91,17 +124,13 @@ export default function SiteHeader({ overlay = false }: SiteHeaderProps) {
                       key={persona.id}
                       to={persona.path}
                       className={linkClass}
-                      onClick={() => trackHeaderNavClick(persona.navLabel, persona.path)}
+                      onClick={() =>
+                        trackHeaderNavClick(persona.navLabel, persona.path)
+                      }
                     >
                       {persona.navLabel}
                     </Link>
                   ))}
-                  <Link to="/subscription" className={linkClass} onClick={() => trackHeaderNavClick('Pricing', '/subscription')}>
-                    Pricing
-                  </Link>
-                  <Link to="/short-video-tours" className={linkClass} onClick={() => trackHeaderNavClick('Product Tour', '/short-video-tours')}>
-                    Product Tour
-                  </Link>
                 </>
               )}
             </div>

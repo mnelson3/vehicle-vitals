@@ -5,20 +5,35 @@ import 'package:provider/provider.dart';
 import '../components/ad_banner.dart';
 import '../components/app_bottom_nav.dart';
 import '../models/maintenance.dart';
-import '../models/maintenance_schedule.dart';
 import '../models/vehicle.dart';
 import '../services/calendar_service.dart';
 import '../services/data_export_service.dart';
 import '../services/firestore_service.dart';
+import '../services/maintenance_plan_service.dart';
 import '../services/premium_service.dart';
+import '../theme/design_tokens.dart';
+import '../utils/number_format.dart';
 import 'maintenance_detail_screen.dart';
 
 String _performedByLabel(String value) {
   switch (value) {
     case 'self':
       return 'Self-service';
+    case 'repair_shop':
+      return 'Repair shop';
+    case 'dealership':
+      return 'Dealership';
+    case 'body_shop':
+      return 'Body shop';
+    case 'car_wash':
+      return 'Car wash';
+    case 'detailer':
+      return 'Detailer';
+    // Retired categories, kept for entries recorded before this taxonomy
+    // shipped — new entries never write these.
     case 'business':
       return 'Business-maintained';
+    case 'mechanic':
     default:
       return 'Mechanic';
   }
@@ -46,7 +61,8 @@ class _MaintenanceListScreenState extends State<MaintenanceListScreen> {
   final _titleController = TextEditingController();
   final _notesController = TextEditingController();
   final _costController = TextEditingController();
-  String _performedBy = 'mechanic';
+  final _providerNameController = TextEditingController();
+  String _performedBy = 'repair_shop';
   String _coverage = 'parts_and_labor';
   final DataExportService _exportService = DataExportService();
   final CalendarService _calendarService = CalendarService();
@@ -54,6 +70,9 @@ class _MaintenanceListScreenState extends State<MaintenanceListScreen> {
   Vehicle? _vehicle;
   bool _loading = true;
   bool _loadingVehicle = true;
+  MaintenancePlan? _maintenancePlan;
+  final MaintenancePlanService _maintenancePlanService =
+      MaintenancePlanService();
 
   @override
   void initState() {
@@ -67,6 +86,7 @@ class _MaintenanceListScreenState extends State<MaintenanceListScreen> {
     _titleController.dispose();
     _notesController.dispose();
     _costController.dispose();
+    _providerNameController.dispose();
     super.dispose();
   }
 
@@ -75,9 +95,26 @@ class _MaintenanceListScreenState extends State<MaintenanceListScreen> {
     try {
       final firestoreService = context.read<FirestoreService>();
       final vehicle = await firestoreService.getVehicle(widget.vin);
+
+      MaintenancePlan? plan;
+      if (vehicle != null && vehicle.mileage > 0) {
+        try {
+          plan = await _maintenancePlanService.getMaintenancePlan(
+            vin: vehicle.vin,
+            currentMileage: vehicle.mileage,
+            make: vehicle.make,
+            model: vehicle.model,
+          );
+        } catch (_) {
+          // Leave plan null; the recommended-maintenance card just won't
+          // render its schedule list.
+        }
+      }
+
       if (!mounted) return;
       setState(() {
         _vehicle = vehicle;
+        _maintenancePlan = plan;
         _loadingVehicle = false;
       });
     } catch (e) {
@@ -138,6 +175,9 @@ class _MaintenanceListScreenState extends State<MaintenanceListScreen> {
           notes: _notesController.text.trim(),
           cost: cost ?? 0.0,
           performedBy: _performedBy,
+          providerName: _performedBy == 'self'
+              ? ''
+              : _providerNameController.text.trim(),
           coverage: _coverage,
           date: DateTime.now(),
           createdAt: DateTime.now(),
@@ -148,7 +188,8 @@ class _MaintenanceListScreenState extends State<MaintenanceListScreen> {
       _titleController.clear();
       _notesController.clear();
       _costController.clear();
-      _performedBy = 'mechanic';
+      _providerNameController.clear();
+      _performedBy = 'repair_shop';
       _coverage = 'parts_and_labor';
 
       await _loadEntries();
@@ -245,7 +286,7 @@ class _MaintenanceListScreenState extends State<MaintenanceListScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Added $eventsAdded maintenance events to calendar'),
-            backgroundColor: Colors.green,
+            backgroundColor: AppDesignTokens.success,
           ),
         );
       }
@@ -254,7 +295,7 @@ class _MaintenanceListScreenState extends State<MaintenanceListScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Calendar sync failed: ${e.toString()}'),
-            backgroundColor: Colors.red,
+            backgroundColor: Theme.of(context).colorScheme.error,
           ),
         );
       }
@@ -319,9 +360,9 @@ class _MaintenanceListScreenState extends State<MaintenanceListScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Text(
+                  Text(
                     'Add Maintenance Entry',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    style: Theme.of(context).textTheme.titleMedium,
                   ),
                   const SizedBox(height: 16),
                   TextField(
@@ -361,12 +402,24 @@ class _MaintenanceListScreenState extends State<MaintenanceListScreen> {
                               child: Text('Self-service'),
                             ),
                             DropdownMenuItem(
-                              value: 'mechanic',
-                              child: Text('Mechanic'),
+                              value: 'repair_shop',
+                              child: Text('Repair shop'),
                             ),
                             DropdownMenuItem(
-                              value: 'business',
-                              child: Text('Business-maintained'),
+                              value: 'dealership',
+                              child: Text('Dealership'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'body_shop',
+                              child: Text('Body shop'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'car_wash',
+                              child: Text('Car wash'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'detailer',
+                              child: Text('Detailer'),
                             ),
                           ],
                           onChanged: (value) {
@@ -374,6 +427,26 @@ class _MaintenanceListScreenState extends State<MaintenanceListScreen> {
                             setState(() => _performedBy = value);
                           },
                         ),
+                        if (_performedBy != 'self') ...[
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: _providerNameController,
+                            decoration: const InputDecoration(
+                              labelText: 'Shop or professional',
+                              hintText: 'e.g. Downtown Auto Repair',
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: TextButton.icon(
+                              onPressed: () =>
+                                  context.push('/app/service-providers'),
+                              icon: const Icon(Icons.storefront_outlined),
+                              label: const Text('Find shops & services'),
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: 12),
                         DropdownButtonFormField<String>(
                           initialValue: _coverage,
@@ -427,12 +500,9 @@ class _MaintenanceListScreenState extends State<MaintenanceListScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+                    Text(
                       'Recommended Maintenance',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
+                      style: Theme.of(context).textTheme.titleMedium,
                     ),
                     const SizedBox(height: 8),
                     Text(
@@ -442,33 +512,58 @@ class _MaintenanceListScreenState extends State<MaintenanceListScreen> {
                     const SizedBox(height: 16),
                     Builder(
                       builder: (context) {
-                        final schedules =
-                            MaintenanceSchedule.getUpcomingMaintenance(
-                              _vehicle!.make,
-                              _vehicle!.model,
-                              _vehicle!.mileage,
-                            );
-                        if (schedules.isEmpty) {
+                        final plan = _maintenancePlan;
+                        if (plan == null || plan.items.isEmpty) {
                           return const Text(
-                            'No manufacturer schedules available for this vehicle.',
+                            'No maintenance schedule available for this vehicle.',
                             style: TextStyle(
                               fontStyle: FontStyle.italic,
                               color: Colors.grey,
                             ),
                           );
                         }
+                        final mileage = _vehicle!.mileage;
+                        final schedules = [...plan.items]
+                          ..sort(
+                            (a, b) =>
+                                a.nextDueMileage.compareTo(b.nextDueMileage),
+                          );
                         return Column(
-                          children: schedules.take(3).map((schedule) {
-                            return ListTile(
-                              dense: true,
-                              leading: const Icon(Icons.build, size: 20),
-                              title: Text(schedule['description']),
-                              subtitle: Text(
-                                'Due: ${schedule['nextDueMileage']} miles (${schedule['milesUntilDue']} miles)',
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (!plan.modelSpecific)
+                              const Padding(
+                                padding: EdgeInsets.only(bottom: 8),
+                                child: Text(
+                                  'No manufacturer data for this vehicle — showing a generic estimate.',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontStyle: FontStyle.italic,
+                                    color: Colors.grey,
+                                  ),
+                                ),
                               ),
-                              trailing: Text(schedule['frequency']),
-                            );
-                          }).toList(),
+                            ...schedules.take(3).map((schedule) {
+                              final milesUntilDue =
+                                  (schedule.nextDueMileage - mileage).clamp(
+                                    0,
+                                    1 << 30,
+                                  );
+                              return ListTile(
+                                dense: true,
+                                leading: const Icon(Icons.build, size: 20),
+                                title: Text(
+                                  formatServiceTypeLabel(schedule.serviceType),
+                                ),
+                                subtitle: Text(
+                                  'Due: ${schedule.nextDueMileage} miles ($milesUntilDue miles)',
+                                ),
+                                trailing: Text(
+                                  'Every ${schedule.intervalMiles} mi',
+                                ),
+                              );
+                            }),
+                          ],
                         );
                       },
                     ),
@@ -504,7 +599,9 @@ class _MaintenanceListScreenState extends State<MaintenanceListScreen> {
                             children: [
                               if (entry.notes.isNotEmpty) Text(entry.notes),
                               Text(
-                                '${_performedByLabel(entry.performedBy)} • ${_coverageLabel(entry.coverage)}',
+                                entry.providerName.isNotEmpty
+                                    ? '${_performedByLabel(entry.performedBy)} (${entry.providerName}) • ${_coverageLabel(entry.coverage)}'
+                                    : '${_performedByLabel(entry.performedBy)} • ${_coverageLabel(entry.coverage)}',
                                 style: TextStyle(
                                   fontSize: 12,
                                   color: Colors.grey[600],
@@ -512,7 +609,7 @@ class _MaintenanceListScreenState extends State<MaintenanceListScreen> {
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                'Cost: \$${entry.cost.toStringAsFixed(2)} • ${entry.date.day}/${entry.date.month}/${entry.date.year}',
+                                'Cost: ${formatCurrencyAmount(entry.cost)} • ${entry.date.day}/${entry.date.month}/${entry.date.year}',
                                 style: TextStyle(
                                   fontSize: 12,
                                   color: Colors.grey[600],

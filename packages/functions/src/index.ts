@@ -30,6 +30,7 @@ import {
 } from './integration.cache';
 import { getIntegrationConfig } from './integrations.config';
 import { lookupOwnerManuals } from './manuals.provider';
+import { consumeQuota } from './quota.provider';
 import { enforceRateLimit, requireAuthenticatedUser } from './request.guards';
 import { buildMaintenancePlan } from './schedule.provider';
 import { lookupWarrantySummary } from './warranty.provider';
@@ -114,6 +115,7 @@ interface ReminderSweepDependencies {
     vehicle: Vehicle,
     maintenanceItems: MaintenanceItem[]
   ) => Promise<void>;
+  markReminderSent: (userId: string, vin: string) => Promise<void>;
 }
 
 interface ReminderScheduleRunDependencies {
@@ -1351,18 +1353,52 @@ function inferServiceType(fileName: string): string | undefined {
   return match?.label;
 }
 
-function extractCost(value: string): number | undefined {
-  const text = value.toLowerCase();
-  const explicit =
-    text.match(
-      /(?:total|amount|invoice|paid|cost)\D{0,8}(\d{1,5}(?:[.,]\d{2})?)/i
-    ) || text.match(/\$(\d{1,5}(?:[.,]\d{2})?)/);
-  if (!explicit) return undefined;
-
-  const normalized = explicit[1].replace(',', '.');
+function parseCostAmount(raw: string): number | undefined {
+  // Strip thousands separators (1,234.56 -> 1234.56) without misreading a
+  // decimal comma as one — only a comma immediately followed by exactly
+  // three digits (and not itself part of a longer digit run) is a
+  // thousands separator.
+  const normalized = raw.replace(/,(\d{3})(?!\d)/g, '$1');
   const parsed = Number(normalized);
   if (!Number.isFinite(parsed) || parsed <= 0) return undefined;
   return Number(parsed.toFixed(2));
+}
+
+export function extractCost(value: string): number | undefined {
+  const text = value.toLowerCase();
+
+  // Prefer an explicit grand-total-style label — "total" but not
+  // "subtotal" — since a receipt's subtotal (pre-tax) is not what was
+  // actually paid. A document can carry more than one such label (e.g.
+  // "Total: $450.00 ... Total Due: $486.00" once tax is added); take the
+  // largest, since the final total is never smaller than an earlier
+  // partial one.
+  const totalMatches = [
+    ...text.matchAll(
+      /(?<!sub)(?:total|amount due|balance due|amount paid|paid)\D{0,8}(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g
+    ),
+  ]
+    .map(match => parseCostAmount(match[1]))
+    .filter((amount): amount is number => typeof amount === 'number');
+
+  if (totalMatches.length > 0) {
+    return Math.max(...totalMatches);
+  }
+
+  // No total-style label matched — fall back to the largest bare dollar
+  // amount on the document. The actual total is rarely the smallest number
+  // printed (unlike a per-item price, a discount, or a "you saved $X" line).
+  const bareMatches = [
+    ...text.matchAll(/\$\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g),
+  ]
+    .map(match => parseCostAmount(match[1]))
+    .filter((amount): amount is number => typeof amount === 'number');
+
+  if (bareMatches.length > 0) {
+    return Math.max(...bareMatches);
+  }
+
+  return undefined;
 }
 
 function extractMileage(value: string): number | undefined {
@@ -1515,7 +1551,22 @@ Rules:
   }
 }
 
-function buildAttachmentAnalysis(
+// Upper sanity bound for a single extracted document cost. Generous enough
+// for a major repair (engine/transmission swap on a luxury vehicle), but
+// well below typical vehicle purchase prices — a guardrail against a
+// misread/hallucinated AI extraction (or a heuristic regex match on an
+// unrelated large number) silently inflating downstream spend totals, the
+// same failure mode that inflated a real user's "maintenance spend
+// captured" figure by $100,000+.
+const MAX_PLAUSIBLE_SERVICE_COST = 25000;
+
+function parseValidCost(value: unknown): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
+  if (value <= 0 || value > MAX_PLAUSIBLE_SERVICE_COST) return undefined;
+  return value;
+}
+
+export function buildAttachmentAnalysis(
   objectName: string,
   mimeType: string | undefined,
   customMetadata: Record<string, string> | undefined,
@@ -1555,14 +1606,30 @@ function buildAttachmentAnalysis(
     'other',
   ];
 
+  // Gemini's totalCost is trusted only after passing the same sanity checks
+  // the heuristic path already applies to itself — the prompt asks it to
+  // "use the grand total," but nothing enforces that, and an unvalidated
+  // number (wrong line item, hallucination, OCR misread) flows straight
+  // into every downstream spend calculation otherwise.
+  const validatedGeminiCost = parseValidCost(gemini?.totalCost);
+  if (
+    typeof gemini?.totalCost === 'number' &&
+    validatedGeminiCost === undefined
+  ) {
+    logger.warn('Gemini totalCost rejected as implausible', {
+      objectName,
+      totalCost: gemini.totalCost,
+    });
+  }
+  const validatedHeuristicCost = parseValidCost(heuristicCost);
+
   const extracted = compactDefined({
     documentCategory:
       geminiCategory && validCategories.includes(geminiCategory)
         ? geminiCategory
         : heuristicCategory,
     serviceType: gemini?.serviceType || heuristicServiceType,
-    totalCost:
-      typeof gemini?.totalCost === 'number' ? gemini.totalCost : heuristicCost,
+    totalCost: validatedGeminiCost ?? validatedHeuristicCost,
     currency: gemini?.currency || 'USD',
     serviceDate: gemini?.serviceDate || heuristicDate,
     mileage:
@@ -1579,8 +1646,29 @@ function buildAttachmentAnalysis(
 
   // Gemini analysis earns a base confidence bonus
   const geminiBonus = gemini ? 0.3 : 0;
+
+  // The signals above only measure how many fields got POPULATED, not
+  // whether they're correct — a document could get every field wrong and
+  // still score maximum confidence as long as something landed in each
+  // slot. When both extraction paths (Gemini and the regex heuristic)
+  // independently arrive at the same cost, that agreement is real evidence
+  // of correctness; when they meaningfully disagree, that's real evidence
+  // one of them is wrong, and confidence should reflect it either way.
+  let costAgreementAdjustment = 0;
+  if (
+    typeof validatedGeminiCost === 'number' &&
+    typeof validatedHeuristicCost === 'number'
+  ) {
+    const diff = Math.abs(validatedGeminiCost - validatedHeuristicCost);
+    const tolerance = Math.max(5, validatedHeuristicCost * 0.15);
+    costAgreementAdjustment = diff <= tolerance ? 0.1 : -0.15;
+  }
+
   const confidence = Math.min(
-    0.25 + geminiBonus + confidenceSignals * 0.1,
+    Math.max(
+      0.25 + geminiBonus + confidenceSignals * 0.1 + costAgreementAdjustment,
+      0.05
+    ),
     0.95
   );
 
@@ -1645,6 +1733,12 @@ async function upsertAttachmentAnalysis(params: {
   // separate caller to validate against — the object path itself is the
   // source of truth — so it omits this.
   requireCallerMembership?: boolean;
+  // True for analyzeAttachmentTextCallable (a user explicitly asked for
+  // analysis and can be told "no" outright). False/omitted for the storage
+  // finalize trigger, which can't reject an upload that already
+  // happened — it degrades to heuristic-only analysis instead and marks
+  // the result as quota-skipped.
+  throwOnQuotaExceeded?: boolean;
 }) {
   const {
     uid,
@@ -1657,6 +1751,7 @@ async function upsertAttachmentAnalysis(params: {
     forceOcrText,
     skipGemini,
     requireCallerMembership,
+    throwOnQuotaExceeded,
   } = params;
 
   const pathContext = parseAttachmentPath(objectPath);
@@ -1710,11 +1805,37 @@ async function upsertAttachmentAnalysis(params: {
     'image/gif',
   ];
   const mimeForGemini = (contentType || '').toLowerCase();
-  const canUseGemini =
+  let canUseGemini =
     !skipGemini &&
     !forceOcrText &&
     effectiveBucket &&
     (geminiEnabledMimes.includes(mimeForGemini) || mimeForGemini === '');
+
+  // Quota is per-user (see quota.provider.ts); org-owned garages have no
+  // per-user quota concept today, so org-scoped attachments are exempt
+  // rather than silently blocked against a nonexistent quota.
+  let quotaExceeded = false;
+  if (canUseGemini && pathContext.ownerType === 'user') {
+    const entitlements = await resolveEffectiveEntitlements(uid);
+    const quota = await consumeQuota(uid, entitlements.tier, 'aiAnalysis');
+    if (!quota.allowed) {
+      quotaExceeded = true;
+      canUseGemini = false;
+      logger.warn('AI analysis quota exceeded', {
+        uid,
+        tier: entitlements.tier,
+        used: quota.used,
+        limit: quota.limit,
+      });
+      if (throwOnQuotaExceeded) {
+        throw new HttpsError(
+          'resource-exhausted',
+          `AI analysis quota exceeded for this month (${quota.used}/${quota.limit}). ` +
+            'Upgrade your plan or wait for next month\'s reset.'
+        );
+      }
+    }
+  }
 
   if (canUseGemini && effectiveBucket) {
     logger.info('Running Gemini analysis', { objectPath, contentType });
@@ -1752,6 +1873,7 @@ async function upsertAttachmentAnalysis(params: {
     extracted,
     confidence,
     sourceText,
+    skipped: quotaExceeded ? 'quota_exceeded' : null,
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     processedAt: admin.firestore.FieldValue.serverTimestamp(),
   };
@@ -1900,6 +2022,7 @@ export const analyzeAttachmentTextCallable = onCall(
       contentType: (contentType || '').trim() || null,
       forceOcrText: normalizedText || undefined,
       requireCallerMembership: true,
+      throwOnQuotaExceeded: true,
     });
 
     return {
@@ -1917,7 +2040,7 @@ async function lookupVinData(vinInput: string) {
     throw new Error('Valid 17-character VIN required');
   }
 
-  if (!hasValidVinChecksum(vin)) {
+  if (!(await hasValidVinChecksum(vin))) {
     throw new Error('Valid VIN checksum required');
   }
 
@@ -1982,7 +2105,7 @@ async function lookupNhtsaRecalls(vinInput: string) {
     throw new Error('Valid 17-character VIN required');
   }
 
-  if (!hasValidVinChecksum(vin)) {
+  if (!(await hasValidVinChecksum(vin))) {
     throw new Error('Valid VIN checksum required');
   }
 
@@ -2019,59 +2142,11 @@ function hashToSeed(value: string): number {
   return hash;
 }
 
-const VIN_TRANSLITERATION: Record<string, number> = {
-  A: 1,
-  B: 2,
-  C: 3,
-  D: 4,
-  E: 5,
-  F: 6,
-  G: 7,
-  H: 8,
-  J: 1,
-  K: 2,
-  L: 3,
-  M: 4,
-  N: 5,
-  P: 7,
-  R: 9,
-  S: 2,
-  T: 3,
-  U: 4,
-  V: 5,
-  W: 6,
-  X: 7,
-  Y: 8,
-  Z: 9,
-};
-
-const VIN_WEIGHTS = [8, 7, 6, 5, 4, 3, 2, 10, 0, 9, 8, 7, 6, 5, 4, 3, 2];
-
-function hasValidVinChecksum(vinInput: string): boolean {
-  const vin = vinInput.trim().toUpperCase();
-
-  if (!/^[A-HJ-NPR-Z0-9]{17}$/.test(vin)) {
-    return false;
-  }
-
-  let sum = 0;
-  for (let i = 0; i < vin.length; i += 1) {
-    const char = vin[i];
-    const parsedNumeric = Number(char);
-    const numericValue = Number.isFinite(parsedNumeric)
-      ? parsedNumeric
-      : VIN_TRANSLITERATION[char];
-
-    if (numericValue === undefined) {
-      return false;
-    }
-
-    sum += numericValue * VIN_WEIGHTS[i];
-  }
-
-  const remainder = sum % 11;
-  const expectedCheckDigit = remainder === 10 ? 'X' : String(remainder);
-  return vin[8] === expectedCheckDigit;
+async function hasValidVinChecksum(vinInput: string): Promise<boolean> {
+  const { hasValidVinChecksum: checkVinChecksum } = await import(
+    "@vehicle-vitals/shared/vinValidation"
+  );
+  return checkVinChecksum(vinInput);
 }
 
 function deterministicShuffle<T>(items: T[], seed: number): T[] {
@@ -2180,7 +2255,7 @@ function buildLocalServiceProviders(
       type: 'car_wash',
       name: 'Sparkle Tunnel Wash',
       distanceMiles: Math.max(1, Math.min(radiusMiles, 2.2)),
-      address: `250 Clean Car Ln, ${normalizedLocation}`,
+      address: `250 Clean Vehicle Ln, ${normalizedLocation}`,
       phone: '+1-555-0410',
       website: 'https://example.com/wash/1',
       rating: 4.3,
@@ -2232,7 +2307,7 @@ export const vinLookup = onRequest(
         response.status(400).json({ error: 'Valid 17-character VIN required' });
         return;
       }
-      if (!hasValidVinChecksum(normalizedVin)) {
+      if (!(await hasValidVinChecksum(normalizedVin))) {
         response.status(400).json({ error: 'Valid VIN checksum required' });
         return;
       }
@@ -2263,7 +2338,7 @@ export const vinLookupCallable = onCall(async request => {
     throw new HttpsError('invalid-argument', 'Valid 17-character VIN required');
   }
 
-  if (!hasValidVinChecksum(normalizedVin)) {
+  if (!(await hasValidVinChecksum(normalizedVin))) {
     throw new HttpsError('invalid-argument', 'Valid VIN checksum required');
   }
 
@@ -2290,7 +2365,7 @@ export const getVehicleInsightsCallable = onCall(async request => {
   }
 
   const normalizedVin = vin.trim().toUpperCase();
-  if (!hasValidVinChecksum(normalizedVin)) {
+  if (!(await hasValidVinChecksum(normalizedVin))) {
     throw new HttpsError('invalid-argument', 'Valid VIN checksum required');
   }
 
@@ -2578,6 +2653,37 @@ export async function runMaintenanceReminderSchedule(
  * @param {ReminderSweepDependencies} dependencies Optional injected deps
  * @return {Promise<ReminderSweepSummary>} Sweep counts for observability/tests
  */
+// Minimum gap between reminder emails/pushes for the same vehicle. Without
+// this, a vehicle whose upcoming-maintenance condition stays true (e.g. no
+// oil change logged) gets a fresh email and push notification every single
+// day the cron runs, indefinitely.
+const REMINDER_COOLDOWN_DAYS = 7;
+
+function isWithinReminderCooldown(
+  vehicle: Vehicle & { lastMaintenanceReminderSentAt?: string }
+): boolean {
+  const last = vehicle.lastMaintenanceReminderSentAt;
+  if (!last) return false;
+  const lastSent = new Date(last);
+  if (Number.isNaN(lastSent.getTime())) return false;
+  const cooldownEnd = new Date(lastSent.getTime());
+  cooldownEnd.setDate(cooldownEnd.getDate() + REMINDER_COOLDOWN_DAYS);
+  return new Date() < cooldownEnd;
+}
+
+async function markVehicleReminderSent(
+  userId: string,
+  vin: string
+): Promise<void> {
+  await admin
+    .firestore()
+    .doc(`users/${userId}/vehicles/${vin}`)
+    .set(
+      { lastMaintenanceReminderSentAt: new Date().toISOString() },
+      { merge: true }
+    );
+}
+
 export async function runMaintenanceReminderSweep(
   dependencies?: Partial<ReminderSweepDependencies>
 ): Promise<ReminderSweepSummary> {
@@ -2590,6 +2696,8 @@ export async function runMaintenanceReminderSweep(
     dependencies?.sendReminderEmail || sendReminderEmail;
   const deliverPushNotification =
     dependencies?.sendPushNotification || sendPushNotification;
+  const markReminderSent =
+    dependencies?.markReminderSent || markVehicleReminderSent;
 
   const users = await queryDocuments('users');
 
@@ -2638,10 +2746,17 @@ export async function runMaintenanceReminderSweep(
         continue;
       }
 
+      if (isWithinReminderCooldown(vehicle)) {
+        continue;
+      }
+
+      let deliveredAny = false;
+
       if (canSendEmail) {
         try {
           await deliverReminderEmail(user.email, vehicle, upcomingMaintenance);
           remindersSent += 1;
+          deliveredAny = true;
         } catch (error) {
           reminderFailures += 1;
           logger.error('Reminder email delivery failed', {
@@ -2661,12 +2776,27 @@ export async function runMaintenanceReminderSweep(
             upcomingMaintenance
           );
           pushSent += 1;
+          deliveredAny = true;
         } catch (pushError) {
           pushFailures += 1;
           logger.warn('Push notification delivery failed', {
             userId,
             vin: vehicle.vin,
             pushError,
+          });
+        }
+      }
+
+      if (deliveredAny) {
+        try {
+          await markReminderSent(userId, vehicle.vin);
+        } catch (markError) {
+          // Non-fatal — worst case the vehicle gets reminded again before
+          // the cooldown would otherwise have elapsed.
+          logger.warn('Failed to record reminder cooldown state', {
+            userId,
+            vin: vehicle.vin,
+            markError,
           });
         }
       }
@@ -2698,7 +2828,76 @@ async function getUpcomingMaintenance(
     `users/${vehicle.uid || 'unknown'}/vehicles/${vehicle.vin}/maintenance`
   );
 
-  return deriveUpcomingMaintenanceItems(maintenanceEntries, daysAhead);
+  const historyBasedItems = deriveUpcomingMaintenanceItems(
+    maintenanceEntries,
+    daysAhead
+  );
+  const mileageBasedItems = deriveMileageBasedMaintenanceItems(
+    vehicle.mileage,
+    daysAhead,
+    vehicle.make,
+    vehicle.model
+  );
+
+  // Merge without duplicating a service type both paths already agree is
+  // due — e.g. don't email "Oil Change" twice because the history check and
+  // the mileage check both flagged it.
+  const seenTitles = new Set(historyBasedItems.map(item => item.title));
+  const merged = [...historyBasedItems];
+  for (const item of mileageBasedItems) {
+    if (!seenTitles.has(item.title)) {
+      merged.push(item);
+      seenTitles.add(item.title);
+    }
+  }
+  return merged;
+}
+
+const MILEAGE_MAINTENANCE_LABELS: Record<string, string> = {
+  oil_change: 'Oil Change',
+  tire_rotation: 'Tire Rotation',
+  brake_inspection: 'Brake Inspection',
+  transmission_service: 'Transmission Service',
+  air_filter: 'Air Filter Replacement',
+};
+
+/**
+ * Build upcoming maintenance reminders from current mileage alone, using
+ * the same schedule engine as the Maintenance Plan endpoint
+ * (buildMaintenancePlan) — manufacturer-specific intervals when this app
+ * has them on file for the vehicle's make/model, a generic template
+ * otherwise. Unlike deriveUpcomingMaintenanceItems, this has no concept
+ * of service history — it projects on the assumed interval grid — but it
+ * covers tire rotation and brake inspection in addition to oil, and
+ * scales with the vehicle's actual mileage rather than a fixed calendar
+ * window that ignores mileage entirely.
+ * @param {number} currentMileage Vehicle's current odometer reading
+ * @param {number} daysAhead Number of days to look ahead for reminders
+ * @param {string} [make] Vehicle make
+ * @param {string} [model] Vehicle model
+ * @return {MaintenanceItem[]} Array of upcoming maintenance items
+ */
+export function deriveMileageBasedMaintenanceItems(
+  currentMileage: number,
+  daysAhead = 30,
+  make?: string,
+  model?: string
+): MaintenanceItem[] {
+  if (!Number.isFinite(currentMileage) || currentMileage <= 0) {
+    return [];
+  }
+
+  const plan = buildMaintenancePlan(currentMileage, make, model);
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() + Math.max(1, daysAhead));
+
+  return plan.items
+    .filter(item => new Date(item.nextDueDate) <= cutoff)
+    .map(item => ({
+      title: MILEAGE_MAINTENANCE_LABELS[item.serviceType] || item.serviceType,
+      dueDate: item.nextDueDate,
+      type: 'preventive',
+    }));
 }
 
 /**
@@ -3019,76 +3218,71 @@ export const getWarrantySummary = onRequest(
   }
 );
 
-export const getMaintenancePlan = onRequest(
-  { cors: true },
-  async (request, response) => {
-    try {
-      if (!enforceRateLimit(request, response, 'getMaintenancePlan')) {
-        return;
-      }
-
-      const uid = await requireAuthenticatedUser(request, response);
-      if (!uid) return;
-
-      if (request.method !== 'GET') {
-        response.status(405).json({ error: 'Method not allowed' });
-        return;
-      }
-
-      const vin = ((request.query.vin as string) || '').trim().toUpperCase();
-      const currentMileage = Number(request.query.currentMileage ?? '');
-
-      if (!vin || vin.length !== 17) {
-        response.status(400).json({ error: 'Valid 17-character VIN required' });
-        return;
-      }
-
-      if (!Number.isFinite(currentMileage) || currentMileage < 0) {
-        response
-          .status(400)
-          .json({ error: 'Valid currentMileage is required' });
-        return;
-      }
-
-      const config = getIntegrationConfig();
-      if (!config.features.maintenancePlanEnabled) {
-        response.status(503).json({
-          success: false,
-          error: 'Maintenance plan feature is disabled',
-          provider: config.providers.schedule,
-          vin,
-          plan: null,
-        });
-        return;
-      }
-
-      if (config.providers.schedule !== 'schedule_primary') {
-        response.status(501).json({
-          success: false,
-          error: 'Maintenance schedule provider integration not implemented',
-          provider: config.providers.schedule,
-          vin,
-          plan: null,
-        });
-        return;
-      }
-
-      const plan = buildMaintenancePlan(currentMileage);
-      response.json({
-        success: true,
-        provider: config.providers.schedule,
-        vin,
-        plan,
-      });
-    } catch (error) {
-      logger.error('Maintenance plan error:', error);
-      response.status(500).json({
-        success: false,
-        error: 'Failed to build maintenance plan',
-      });
-    }
+// onCall (not onRequest) for consistency with the rest of the callable
+// surface — auth is handled by the callable wrapper itself (request.auth),
+// same as analyzeAttachmentTextCallable/getVehicleInsightsCallable. No
+// prior client called the onRequest version this replaced (confirmed: zero
+// references anywhere in packages/web or packages/mobile), so this is a
+// straight replacement, not an addition alongside it.
+export const getMaintenancePlanCallable = onCall(async request => {
+  const uid = request.auth?.uid;
+  if (!uid) {
+    throw new HttpsError('unauthenticated', 'Missing auth context');
   }
-);
+
+  const { vin, currentMileage, make, model } =
+    (request.data as {
+      vin?: string;
+      currentMileage?: number;
+      make?: string;
+      model?: string;
+    }) ?? {};
+
+  const normalizedVin = (vin || '').trim().toUpperCase();
+  if (!normalizedVin || normalizedVin.length !== 17) {
+    throw new HttpsError(
+      'invalid-argument',
+      'Valid 17-character VIN required'
+    );
+  }
+
+  const mileage = Number(currentMileage);
+  if (!Number.isFinite(mileage) || mileage < 0) {
+    throw new HttpsError(
+      'invalid-argument',
+      'Valid currentMileage is required'
+    );
+  }
+
+  const config = getIntegrationConfig();
+  if (!config.features.maintenancePlanEnabled) {
+    return {
+      success: false,
+      error: 'Maintenance plan feature is disabled',
+      provider: config.providers.schedule,
+      vin: normalizedVin,
+      plan: null,
+    };
+  }
+
+  if (config.providers.schedule !== 'schedule_primary') {
+    return {
+      success: false,
+      error: 'Maintenance schedule provider integration not implemented',
+      provider: config.providers.schedule,
+      vin: normalizedVin,
+      plan: null,
+    };
+  }
+
+  const plan = buildMaintenancePlan(mileage, make, model);
+  return {
+    success: true,
+    provider: config.providers.schedule,
+    vin: normalizedVin,
+    plan,
+  };
+});
 
 export const createCalendarEvent = onRequest(
   { cors: true },
@@ -5694,68 +5888,6 @@ export const applyRetentionPolicyCallable = onCall(async request => {
   }
 });
 
-export const recordSupportActionCallable = onCall(async request => {
-  const actorUid = request.auth?.uid;
-  if (!actorUid) {
-    throw new HttpsError('unauthenticated', 'Missing auth context');
-  }
-
-  requireSuperAdmin(request);
-
-  const orgId = (request.data?.orgId || '').toString().trim();
-  const targetUid = (request.data?.targetUid || '').toString().trim();
-  const action = (request.data?.action || '').toString().trim();
-  const notes = (request.data?.notes || '').toString().trim();
-  const idempotencyKey = (request.data?.idempotencyKey || '').toString();
-
-  if (!orgId || !targetUid || !action) {
-    throw new HttpsError(
-      'invalid-argument',
-      'orgId, targetUid, and action are required'
-    );
-  }
-
-  const reservation = await reserveIdempotencyKey({
-    uid: actorUid,
-    operation: 'recordSupportAction',
-    idempotencyKey,
-  });
-  if (reservation.isReplay) {
-    return reservation.result;
-  }
-
-  try {
-    await writeAuditEvent({
-      orgId,
-      actorUid,
-      action: `support.${action}`,
-      targetType: 'user',
-      targetId: targetUid,
-      details: { notes },
-    });
-
-    const result = {
-      success: true,
-      orgId,
-      targetUid,
-      action,
-    };
-
-    await completeIdempotencyKey(
-      reservation,
-      result as unknown as Record<string, unknown>
-    );
-
-    return result;
-  } catch (error) {
-    await markIdempotencyFailed(
-      reservation,
-      error instanceof Error ? error.message : 'unknown_error'
-    );
-    throw error;
-  }
-});
-
 export const getSupportAccessContextCallable = onCall(async request => {
   if (!request.auth?.uid) {
     throw new HttpsError('unauthenticated', 'Missing auth context');
@@ -5816,3 +5948,16 @@ export const searchSupportUsersCallable = onCall(async request => {
     results,
   };
 });
+
+export {
+  onUserVehicleHealthInputsChanged,
+  onUserVehicleMaintenanceChanged,
+  onOrgVehicleHealthInputsChanged,
+  onOrgVehicleMaintenanceChanged,
+  getVehicleHealthSnapshotCallable,
+} from './vehicleHealth.provider';
+
+export {
+  onUserVehicleCreatedPortfolioSelfHeal,
+  onOrgVehicleCreatedPortfolioSelfHeal,
+} from './vehiclePortfolio.provider';

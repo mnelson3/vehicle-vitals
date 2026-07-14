@@ -8,14 +8,15 @@ import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../components/app_bottom_nav.dart';
-import '../models/maintenance_schedule.dart';
 import '../models/vehicle.dart';
 import '../services/calendar_service.dart';
 import '../services/feature_flags_service.dart';
 import '../services/firestore_service.dart';
+import '../services/maintenance_plan_service.dart';
 import '../services/premium_service.dart';
 import '../theme/design_tokens.dart';
 import '../theme/tailwind_utilities.dart';
+import '../utils/number_format.dart';
 import 'maintenance_list_screen.dart';
 
 class UpcomingTasksScreen extends StatefulWidget {
@@ -39,6 +40,15 @@ class _UpcomingTasksScreenState extends State<UpcomingTasksScreen> {
   String _calendarTarget = 'google';
   bool _loading = true;
   final CalendarService _calendarService = CalendarService();
+  final MaintenancePlanService _maintenancePlanService =
+      MaintenancePlanService();
+  // Vehicles whose make/model has no manufacturer interval data on file
+  // (MaintenancePlan.modelSpecific is false, so the items shown are a
+  // generic estimate, not real manufacturer data). Tracked separately so
+  // the empty state can say "we don't have manufacturer data for this
+  // vehicle" instead of the indistinguishable "all caught up, well
+  // maintained."
+  List<Vehicle> _unsupportedVehicles = [];
 
   String _buildReminderKey(String vin, String serviceType) =>
       '$vin:$serviceType';
@@ -93,8 +103,27 @@ class _UpcomingTasksScreenState extends State<UpcomingTasksScreen> {
       final allUpcoming = <Map<String, dynamic>>[];
       final nextSavedReminders = <Map<String, dynamic>>[];
       final nextSavedReminderKeys = <String>{};
+      final nextUnsupportedVehicles = <Vehicle>[];
 
       for (final vehicle in vehicles) {
+        final currentMileage = vehicle.mileage;
+        MaintenancePlan? plan;
+        if (currentMileage > 0) {
+          try {
+            plan = await _maintenancePlanService.getMaintenancePlan(
+              vin: vehicle.vin,
+              currentMileage: currentMileage,
+              make: vehicle.make,
+              model: vehicle.model,
+            );
+          } catch (_) {
+            // Leave plan null; treated as unsupported below.
+          }
+        }
+        if (plan == null || !plan.modelSpecific) {
+          nextUnsupportedVehicles.add(vehicle);
+        }
+
         final reminders = await firestoreService.getReminders(vehicle.vin);
         for (final reminder in reminders) {
           final serviceType = (reminder['serviceType'] ?? 'maintenance')
@@ -108,12 +137,23 @@ class _UpcomingTasksScreenState extends State<UpcomingTasksScreen> {
           }
         }
 
-        final currentMileage = vehicle.mileage;
-        final upcoming = MaintenanceSchedule.getUpcomingMaintenance(
-          vehicle.make,
-          vehicle.model,
-          currentMileage,
-        );
+        final upcoming = (plan?.items ?? const <MaintenancePlanItem>[]).map((
+          item,
+        ) {
+          final milesUntilDue = (item.nextDueMileage - currentMileage).clamp(
+            0,
+            1 << 30,
+          );
+          return {
+            'id': item.serviceType,
+            'description': formatServiceTypeLabel(item.serviceType),
+            'frequency':
+                'Every ${formatWithCommas(item.intervalMiles)} miles or ${item.intervalMonths} months',
+            'interval': item.intervalMiles,
+            'nextDueMileage': item.nextDueMileage,
+            'milesUntilDue': milesUntilDue,
+          };
+        });
 
         for (final item in upcoming) {
           allUpcoming.add({...item, 'vehicle': vehicle});
@@ -134,6 +174,7 @@ class _UpcomingTasksScreenState extends State<UpcomingTasksScreen> {
             ? normalizedTargets
             : _calendarTargets;
         _calendarTarget = selectedCalendarTarget;
+        _unsupportedVehicles = nextUnsupportedVehicles;
         _loading = false;
       });
     } catch (e) {
@@ -169,8 +210,15 @@ class _UpcomingTasksScreenState extends State<UpcomingTasksScreen> {
     return 'Upcoming';
   }
 
+  // 35 mi/day matches web's "Average driving" default (packages/web/src
+  // /pages/UpcomingTasks.tsx's effectiveDailyMiles) — previously this used
+  // a separate, undocumented 100 mi/day assumption, so the same vehicle
+  // could show a meaningfully different predicted due date on mobile vs.
+  // web. Keep these two constants in sync.
+  static const int _milesPerDay = 35;
+
   DateTime _estimateDueDate(int milesUntilDue) {
-    final dayOffset = (milesUntilDue / 100).ceil().clamp(1, 180);
+    final dayOffset = (milesUntilDue / _milesPerDay).ceil().clamp(1, 180);
     return DateTime.now().add(Duration(days: dayOffset));
   }
 
@@ -262,13 +310,13 @@ class _UpcomingTasksScreenState extends State<UpcomingTasksScreen> {
     }
   }
 
-  Future<void> _updateCalendarTarget(String targetId) async {
-    setState(() => _calendarTarget = targetId);
-    final prefs = await _calendarService.getCalendarPreferences();
-    await _calendarService.updateCalendarPreferences(
-      (prefs['calendarSyncEnabled'] as bool?) ?? false,
-      calendarId: targetId,
-    );
+  String _calendarTargetLabel() {
+    for (final target in _calendarTargets) {
+      if (target['id'] == _calendarTarget) {
+        return target['name'] ?? _calendarTarget;
+      }
+    }
+    return _calendarTarget;
   }
 
   Future<void> _saveReminder(Vehicle vehicle, Map<String, dynamic> item) async {
@@ -521,7 +569,7 @@ class _UpcomingTasksScreenState extends State<UpcomingTasksScreen> {
   Widget build(BuildContext context) {
     if (_loading) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Upcoming Tasks')),
+        appBar: AppBar(title: const Text('Maintenance Plan')),
         body: const Center(child: CircularProgressIndicator()),
         bottomNavigationBar: const AppBottomNav(currentIndex: 1),
       );
@@ -529,11 +577,11 @@ class _UpcomingTasksScreenState extends State<UpcomingTasksScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Upcoming Tasks'),
+        title: const Text('Maintenance Plan'),
         actions: [
           IconButton(
             icon: const Icon(Icons.timeline),
-            tooltip: 'Timeline',
+            tooltip: 'Service History',
             onPressed: () => context.push('/app/timeline'),
           ),
           IconButton(
@@ -574,6 +622,24 @@ class _UpcomingTasksScreenState extends State<UpcomingTasksScreen> {
               ).textTheme.bodyMedium?.color?.withValues(alpha: 0.7),
             ),
           ),
+          if (_unsupportedVehicles.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Text(
+                "We don't have manufacturer maintenance data for "
+                '${_unsupportedVehicles.map((v) => '${v.year} ${v.make} ${v.model}').join(', ')}, '
+                "so this isn't a confirmed clean bill of health for "
+                '${_unsupportedVehicles.length == 1 ? 'it' : 'them'} — log '
+                'your own service history to get personalized reminders.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Theme.of(context).colorScheme.tertiary,
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -605,330 +671,371 @@ class _UpcomingTasksScreenState extends State<UpcomingTasksScreen> {
         : hasPlanning12mo
         ? 12
         : 3;
-    // NOTE: this indicator is informational only — MaintenanceSchedule
-    // .getUpcomingMaintenance() is not yet wired to a tier-based mileage
-    // cutoff (it always uses its 50,000-mile default), so the queue below
-    // is not actually clipped to this horizon. TODO: wire maxMileage to
-    // this horizon once product confirms the desired mileage-per-month
-    // assumption for mobile (web derives it from preferredDailyMiles).
+    // NOTE: this indicator is informational only — the server-side
+    // maintenance plan (MaintenancePlanService.getMaintenancePlan) is not
+    // yet wired to a tier-based mileage cutoff, so the queue below is not
+    // actually clipped to this horizon. TODO: wire a horizon cutoff once
+    // product confirms the desired mileage-per-month assumption for
+    // mobile (web derives it from preferredDailyMiles).
     final planningHorizonUpgrade = hasPlanning36mo
         ? null
         : hasPlanning12mo
         ? ('Premium', 36)
         : ('Pro', 12);
 
-    return ListView.builder(
-      padding: EdgeInsets.all(TwSpace.s4),
-      itemCount: _upcomingItems.length + 2, // +2 for summary and legend
-      itemBuilder: (context, index) {
-        if (index == 0) {
-          return Container(
-            margin: EdgeInsets.only(bottom: TwSpace.s3),
-            padding: EdgeInsets.all(TwSpace.s4),
-            decoration: BoxDecoration(
-              color: Theme.of(context).cardColor,
-              borderRadius: BorderRadius.circular(TwRadius.lg),
-              border: Border.all(color: Theme.of(context).dividerColor),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Reminder Center',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
+    return Column(
+      children: [
+        Container(
+          margin: EdgeInsets.fromLTRB(
+            TwSpace.s4,
+            TwSpace.s4,
+            TwSpace.s4,
+            TwSpace.s3,
+          ),
+          padding: EdgeInsets.all(TwSpace.s4),
+          decoration: BoxDecoration(
+            color: Theme.of(context).cardColor,
+            borderRadius: BorderRadius.circular(TwRadius.lg),
+            border: Border.all(color: Theme.of(context).dividerColor),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Reminder Center',
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              SizedBox(height: TwSpace.s2),
+              Text(
+                'Urgent: $urgentCount  •  Soon: $soonCount  •  Queue: ${_upcomingItems.length}',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+              SizedBox(height: TwSpace.s2),
+              Text(
+                'Planning horizon: $planningHorizonMonths-month forecast',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600),
+              ),
+              if (planningHorizonUpgrade != null) ...[
                 SizedBox(height: TwSpace.s2),
-                Text(
-                  'Urgent: $urgentCount  •  Soon: $soonCount  •  Queue: ${_upcomingItems.length}',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-                SizedBox(height: TwSpace.s2),
-                Text(
-                  'Planning horizon: $planningHorizonMonths-month forecast',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600),
-                ),
-                if (planningHorizonUpgrade != null) ...[
-                  SizedBox(height: TwSpace.s2),
-                  Container(
-                    padding: EdgeInsets.all(TwSpace.s2),
-                    decoration: BoxDecoration(
-                      color: Colors.indigo.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(TwRadius.base),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            'Upgrade to ${planningHorizonUpgrade.$1} to plan '
-                            '${planningHorizonUpgrade.$2} months ahead.',
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(color: Colors.indigo),
-                          ),
-                        ),
-                        TextButton(
-                          onPressed: () => context.push('/app/premium'),
-                          child: const Text('Upgrade'),
-                        ),
-                      ],
-                    ),
+                Container(
+                  padding: EdgeInsets.all(TwSpace.s2),
+                  decoration: BoxDecoration(
+                    color: Colors.indigo.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(TwRadius.base),
                   ),
-                ],
-                SizedBox(height: TwSpace.s3),
-                DropdownButtonFormField<String>(
-                  initialValue: _calendarTarget,
-                  decoration: const InputDecoration(
-                    labelText: 'Default calendar action',
-                    border: OutlineInputBorder(),
-                  ),
-                  items: _calendarTargets
-                      .map(
-                        (target) => DropdownMenuItem<String>(
-                          value: target['id'],
-                          child: Text(target['name'] ?? target['id'] ?? ''),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (value) {
-                    if (value == null || value == _calendarTarget) {
-                      return;
-                    }
-                    _updateCalendarTarget(value);
-                  },
-                ),
-              ],
-            ),
-          );
-        }
-
-        if (index == _upcomingItems.length + 1) {
-          return _buildLegend();
-        }
-
-        final item = _upcomingItems[index - 1];
-        final vehicle = item['vehicle'] as Vehicle;
-        final serviceType = _serviceTypeForItem(item);
-        final reminder = _findReminder(vehicle.vin, serviceType);
-        final reminderStatus = (reminder?['status'] ?? '').toString();
-        final reminderKey = _buildReminderKey(vehicle.vin, serviceType);
-        final isReminderBusy =
-            _savingReminderKeys.contains(reminderKey) ||
-            (reminder != null &&
-                _actingReminderIds.contains(reminder['id']?.toString() ?? ''));
-        final milesUntilDue = item['milesUntilDue'] as int;
-
-        return Card(
-          margin: EdgeInsets.only(bottom: TwSpace.s3),
-          color: _getUrgencyBackgroundColor(milesUntilDue),
-          child: Padding(
-            padding: EdgeInsets.all(TwSpace.s4),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        item['description'] as String,
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                    Container(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: TwSpace.s2,
-                        vertical: TwSpace.s1,
-                      ),
-                      decoration: BoxDecoration(
-                        color: _getUrgencyColor(
-                          milesUntilDue,
-                        ).withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(TwRadius.sm),
-                        border: Border.all(
-                          color: _getUrgencyColor(
-                            milesUntilDue,
-                          ).withValues(alpha: 0.3),
-                        ),
-                      ),
-                      child: Text(
-                        _getUrgencyLabel(milesUntilDue),
-                        style: TextStyle(
-                          color: _getUrgencyColor(milesUntilDue),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                    if (reminder != null) ...[
-                      SizedBox(width: TwSpace.s2),
-                      Container(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: TwSpace.s2,
-                          vertical: TwSpace.s1,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.primary.withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(TwRadius.sm),
-                        ),
+                  child: Row(
+                    children: [
+                      Expanded(
                         child: Text(
-                          'Reminder: ${reminderStatus.isEmpty ? 'active' : reminderStatus}',
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.primary,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                          ),
+                          'Upgrade to ${planningHorizonUpgrade.$1} to plan '
+                          '${planningHorizonUpgrade.$2} months ahead.',
+                          style: Theme.of(
+                            context,
+                          ).textTheme.bodySmall?.copyWith(color: Colors.indigo),
                         ),
+                      ),
+                      TextButton(
+                        onPressed: () => context.push('/app/premium'),
+                        child: const Text('Upgrade'),
                       ),
                     ],
-                  ],
-                ),
-                SizedBox(height: TwSpace.s2),
-                Text(
-                  '${vehicle.year} ${vehicle.make} ${vehicle.model}',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(
-                      context,
-                    ).textTheme.bodyMedium?.color?.withValues(alpha: 0.7),
                   ),
-                ),
-                SizedBox(height: TwSpace.s1),
-                Text(
-                  item['frequency'] as String,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(
-                      context,
-                    ).textTheme.bodySmall?.color?.withValues(alpha: 0.7),
-                  ),
-                ),
-                SizedBox(height: TwSpace.s3),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Due at: ${(item['nextDueMileage'] as int).toStringAsFixed(0)} miles',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(
-                          context,
-                        ).textTheme.bodySmall?.color?.withValues(alpha: 0.7),
-                      ),
-                    ),
-                    Text(
-                      'Miles until due: ${milesUntilDue.toStringAsFixed(0)}',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(
-                          context,
-                        ).textTheme.bodySmall?.color?.withValues(alpha: 0.7),
-                      ),
-                    ),
-                    SizedBox(height: TwSpace.s3),
-                    Wrap(
-                      spacing: TwSpace.s2,
-                      runSpacing: TwSpace.s2,
-                      children: [
-                        OutlinedButton(
-                          onPressed: () => _addItemToCalendar(vehicle, item),
-                          child: const Text('Add to Calendar'),
-                        ),
-                        OutlinedButton(
-                          onPressed: isReminderBusy
-                              ? null
-                              : reminder == null
-                              ? () => _saveReminder(vehicle, item)
-                              : () {
-                                  showModalBottomSheet<void>(
-                                    context: context,
-                                    builder: (context) {
-                                      return SafeArea(
-                                        child: Column(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            if (reminderStatus != 'completed')
-                                              ListTile(
-                                                leading: const Icon(
-                                                  Icons.check_circle_outline,
-                                                ),
-                                                title: const Text(
-                                                  'Mark Reminder Complete',
-                                                ),
-                                                onTap: () {
-                                                  Navigator.of(context).pop();
-                                                  _completeReminder(reminder);
-                                                },
-                                              ),
-                                            if (reminderStatus != 'snoozed')
-                                              ListTile(
-                                                leading: const Icon(
-                                                  Icons.snooze,
-                                                ),
-                                                title: const Text(
-                                                  'Snooze 14 Days',
-                                                ),
-                                                onTap: () {
-                                                  Navigator.of(context).pop();
-                                                  _snoozeReminder(reminder);
-                                                },
-                                              ),
-                                            if (reminderStatus != 'dismissed')
-                                              ListTile(
-                                                leading: const Icon(
-                                                  Icons.cancel,
-                                                ),
-                                                title: const Text('Dismiss'),
-                                                onTap: () {
-                                                  Navigator.of(context).pop();
-                                                  _dismissReminder(reminder);
-                                                },
-                                              ),
-                                            if (reminderStatus == 'dismissed' ||
-                                                reminderStatus == 'completed')
-                                              ListTile(
-                                                leading: const Icon(
-                                                  Icons.restore,
-                                                ),
-                                                title: const Text('Restore'),
-                                                onTap: () {
-                                                  Navigator.of(context).pop();
-                                                  _restoreReminder(reminder);
-                                                },
-                                              ),
-                                          ],
-                                        ),
-                                      );
-                                    },
-                                  );
-                                },
-                          child: Text(
-                            reminder == null
-                                ? 'Save Reminder'
-                                : 'Reminder Actions',
-                          ),
-                        ),
-                        ElevatedButton(
-                          onPressed: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) =>
-                                    MaintenanceListScreen(vin: vehicle.vin),
-                              ),
-                            );
-                          },
-                          child: const Text('Mark Complete'),
-                        ),
-                      ],
-                    ),
-                  ],
                 ),
               ],
-            ),
+              SizedBox(height: TwSpace.s2),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'New events go to: ${_calendarTargetLabel()}',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () => context.push('/app/calendar-preferences'),
+                    child: const Text('Change'),
+                  ),
+                ],
+              ),
+            ],
           ),
-        );
-      },
+        ),
+        Expanded(
+          child: ListView.builder(
+            padding: EdgeInsets.fromLTRB(TwSpace.s4, 0, TwSpace.s4, TwSpace.s4),
+            itemCount: _upcomingItems.length + 1, // +1 for legend
+            itemBuilder: (context, index) {
+              if (index == _upcomingItems.length) {
+                return _buildLegend();
+              }
+
+              final item = _upcomingItems[index];
+              final vehicle = item['vehicle'] as Vehicle;
+              final serviceType = _serviceTypeForItem(item);
+              final reminder = _findReminder(vehicle.vin, serviceType);
+              final reminderStatus = (reminder?['status'] ?? '').toString();
+              final reminderKey = _buildReminderKey(vehicle.vin, serviceType);
+              final isReminderBusy =
+                  _savingReminderKeys.contains(reminderKey) ||
+                  (reminder != null &&
+                      _actingReminderIds.contains(
+                        reminder['id']?.toString() ?? '',
+                      ));
+              final milesUntilDue = item['milesUntilDue'] as int;
+
+              return Card(
+                margin: EdgeInsets.only(bottom: TwSpace.s3),
+                color: _getUrgencyBackgroundColor(milesUntilDue),
+                child: Padding(
+                  padding: EdgeInsets.all(TwSpace.s4),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              item['description'] as String,
+                              style: Theme.of(context).textTheme.titleMedium
+                                  ?.copyWith(fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                          Container(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: TwSpace.s2,
+                              vertical: TwSpace.s1,
+                            ),
+                            decoration: BoxDecoration(
+                              color: _getUrgencyColor(
+                                milesUntilDue,
+                              ).withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(TwRadius.sm),
+                              border: Border.all(
+                                color: _getUrgencyColor(
+                                  milesUntilDue,
+                                ).withValues(alpha: 0.3),
+                              ),
+                            ),
+                            child: Text(
+                              _getUrgencyLabel(milesUntilDue),
+                              style: TextStyle(
+                                color: _getUrgencyColor(milesUntilDue),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                          if (reminder != null) ...[
+                            SizedBox(width: TwSpace.s2),
+                            Container(
+                              padding: EdgeInsets.symmetric(
+                                horizontal: TwSpace.s2,
+                                vertical: TwSpace.s1,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.primary.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(
+                                  TwRadius.sm,
+                                ),
+                              ),
+                              child: Text(
+                                'Reminder: ${reminderStatus.isEmpty ? 'active' : reminderStatus}',
+                                style: TextStyle(
+                                  color: Theme.of(context).colorScheme.primary,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      SizedBox(height: TwSpace.s2),
+                      Text(
+                        '${vehicle.year} ${vehicle.make} ${vehicle.model}',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Theme.of(
+                            context,
+                          ).textTheme.bodyMedium?.color?.withValues(alpha: 0.7),
+                        ),
+                      ),
+                      SizedBox(height: TwSpace.s1),
+                      Text(
+                        item['frequency'] as String,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(
+                            context,
+                          ).textTheme.bodySmall?.color?.withValues(alpha: 0.7),
+                        ),
+                      ),
+                      SizedBox(height: TwSpace.s3),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Due at: ${formatWithCommas(item['nextDueMileage'] as int)} miles',
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: Theme.of(context)
+                                      .textTheme
+                                      .bodySmall
+                                      ?.color
+                                      ?.withValues(alpha: 0.7),
+                                ),
+                          ),
+                          Text(
+                            'Miles until due: ${formatWithCommas(milesUntilDue)}',
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: Theme.of(context)
+                                      .textTheme
+                                      .bodySmall
+                                      ?.color
+                                      ?.withValues(alpha: 0.7),
+                                ),
+                          ),
+                          SizedBox(height: TwSpace.s3),
+                          Wrap(
+                            spacing: TwSpace.s2,
+                            runSpacing: TwSpace.s2,
+                            children: [
+                              OutlinedButton(
+                                onPressed: () =>
+                                    _addItemToCalendar(vehicle, item),
+                                child: const Text('Add to Calendar'),
+                              ),
+                              OutlinedButton(
+                                onPressed: isReminderBusy
+                                    ? null
+                                    : reminder == null
+                                    ? () => _saveReminder(vehicle, item)
+                                    : () {
+                                        showModalBottomSheet<void>(
+                                          context: context,
+                                          builder: (context) {
+                                            return SafeArea(
+                                              child: Column(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  if (reminderStatus !=
+                                                      'completed')
+                                                    ListTile(
+                                                      leading: const Icon(
+                                                        Icons
+                                                            .check_circle_outline,
+                                                      ),
+                                                      title: const Text(
+                                                        'Mark Reminder Complete',
+                                                      ),
+                                                      onTap: () {
+                                                        Navigator.of(
+                                                          context,
+                                                        ).pop();
+                                                        _completeReminder(
+                                                          reminder,
+                                                        );
+                                                      },
+                                                    ),
+                                                  if (reminderStatus !=
+                                                      'snoozed')
+                                                    ListTile(
+                                                      leading: const Icon(
+                                                        Icons.snooze,
+                                                      ),
+                                                      title: const Text(
+                                                        'Snooze 14 Days',
+                                                      ),
+                                                      onTap: () {
+                                                        Navigator.of(
+                                                          context,
+                                                        ).pop();
+                                                        _snoozeReminder(
+                                                          reminder,
+                                                        );
+                                                      },
+                                                    ),
+                                                  if (reminderStatus !=
+                                                      'dismissed')
+                                                    ListTile(
+                                                      leading: const Icon(
+                                                        Icons.cancel,
+                                                      ),
+                                                      title: const Text(
+                                                        'Dismiss',
+                                                      ),
+                                                      onTap: () {
+                                                        Navigator.of(
+                                                          context,
+                                                        ).pop();
+                                                        _dismissReminder(
+                                                          reminder,
+                                                        );
+                                                      },
+                                                    ),
+                                                  if (reminderStatus ==
+                                                          'dismissed' ||
+                                                      reminderStatus ==
+                                                          'completed')
+                                                    ListTile(
+                                                      leading: const Icon(
+                                                        Icons.restore,
+                                                      ),
+                                                      title: const Text(
+                                                        'Restore',
+                                                      ),
+                                                      onTap: () {
+                                                        Navigator.of(
+                                                          context,
+                                                        ).pop();
+                                                        _restoreReminder(
+                                                          reminder,
+                                                        );
+                                                      },
+                                                    ),
+                                                ],
+                                              ),
+                                            );
+                                          },
+                                        );
+                                      },
+                                child: Text(
+                                  reminder == null
+                                      ? 'Save Reminder'
+                                      : 'Reminder Actions',
+                                ),
+                              ),
+                              ElevatedButton(
+                                onPressed: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) =>
+                                          MaintenanceListScreen(
+                                            vin: vehicle.vin,
+                                          ),
+                                    ),
+                                  );
+                                },
+                                child: const Text('Mark Complete'),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 

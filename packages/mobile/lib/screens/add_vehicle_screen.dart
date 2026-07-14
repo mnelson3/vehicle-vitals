@@ -8,15 +8,17 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../components/safe_back_button.dart';
 import '../models/vehicle.dart';
 import '../services/firestore_service.dart';
 import '../services/premium_service.dart';
 import '../services/record_storage_service.dart';
 import '../services/vehicle_photo_service.dart';
+import '../utils/vin_validation.dart' as vin_validation;
 
 const List<String> _vehicleTypeOptions = [
-  'Car',
-  'Truck',
+  'Passenger Vehicle',
+  'Commercial Vehicle',
   'Motorcycle',
   'Recreational Vehicle (RV)',
   'Boat',
@@ -98,12 +100,13 @@ class _AddVehicleScreenState extends State<AddVehicleScreen> {
 
   Future<void> _lookupVin() async {
     final vin = _vinController.text.trim().toUpperCase();
-    if (!_looksLikeVin(vin)) {
+    final validationError = vin_validation.getVinLookupValidationError(vin);
+    if (validationError != null) {
       final colorScheme = Theme.of(context).colorScheme;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text(
-            'VIN lookup requires a 17-character VIN. You can still save using a vehicle ID.',
+          content: Text(
+            '$validationError You can still save using a vehicle ID.',
           ),
           backgroundColor: colorScheme.error,
         ),
@@ -507,6 +510,7 @@ class _AddVehicleScreenState extends State<AddVehicleScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Add Vehicle'),
+        leading: const SafeBackButton(),
         actions: [
           TextButton(
             onPressed: () => context.push('/app/scan-vin'),

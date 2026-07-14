@@ -1,25 +1,40 @@
 import { Link } from 'react-router-dom';
 import { useAuth } from '../shared/AuthContext';
+import {
+  AUTH_NAV_CAPABILITIES_WITHOUT_GETTING_STARTED,
+  CAPABILITIES_BY_ID,
+  PRODUCT_TOUR_LINK,
+} from '../data/capabilities';
 import { personaPages } from '../data/personas';
 import { trackFooterNavClick } from '../shared/marketingAnalytics';
 import StackedVLogo from './StackedVLogo';
 
-const productLinks = [
-  { label: 'How It Works', to: '/start-steps' },
-  { label: 'Pricing', to: '/subscription' },
-  { label: 'Product Tour', to: '/short-video-tours' },
-  { label: 'Screens', to: '/everyday-screens' },
-];
+interface FooterLink {
+  label: string;
+  to: string;
+  capabilityId?: string;
+}
 
-const appNavLinks = [
-  { label: 'Garage', to: '/app' },
-  { label: 'Profile', to: '/app/profile' },
-  { label: 'Timeline', to: '/app/timeline' },
-  { label: 'Upcoming', to: '/app/upcoming' },
-  { label: 'Mechanics', to: '/app/providers' },
+// Getting Started and Product Tour are both "learn about the product"
+// content rather than an app task, so they're paired together and styled
+// distinctly (teal, vs. the slate used by every other footer link) on both
+// the signed-out (marketing) and signed-in (app) sides — always shown,
+// unlike the persona/App nav below which switches on auth state.
+const learnMoreLinks: FooterLink[] = [
+  {
+    label: CAPABILITIES_BY_ID.getting_started.fullLabel,
+    to: CAPABILITIES_BY_ID.getting_started.webRoute,
+    capabilityId: CAPABILITIES_BY_ID.getting_started.analyticsId,
+  },
+  {
+    label: PRODUCT_TOUR_LINK.label,
+    to: PRODUCT_TOUR_LINK.to,
+    capabilityId: PRODUCT_TOUR_LINK.analyticsId,
+  },
 ];
 
 const supportLinks = [
+  { label: 'Pricing', to: '/subscription' },
   { label: 'Help', to: '/help' },
   { label: 'Support', to: '/support' },
   { label: 'Privacy', to: '/privacy' },
@@ -61,14 +76,14 @@ export default function SiteFooter() {
   return (
     <footer className="shrink-0 border-t border-slate-700 bg-slate-950 text-white">
       <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-        <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
           <Link
             to="/"
             aria-label="Go to home"
             className="inline-flex no-underline text-white shrink-0"
           >
             <StackedVLogo
-              size={33}
+              size={28}
               showText={false}
               color="#ffffff"
               accent="#14b8a6"
@@ -77,17 +92,19 @@ export default function SiteFooter() {
             />
           </Link>
 
-          <div className="flex flex-col gap-5 sm:flex-row sm:flex-wrap sm:gap-x-10 sm:gap-y-4">
+          <div className="footer-primary-links flex flex-col gap-5 sm:flex-row sm:flex-wrap sm:gap-x-10 sm:gap-y-4 lg:flex-nowrap lg:items-center lg:gap-x-5">
             <nav
-              aria-label="Product"
-              className="flex flex-wrap gap-x-5 gap-y-1 text-sm text-slate-300"
+              aria-label="Learn more"
+              className="flex flex-wrap gap-x-5 gap-y-1 text-sm text-teal-300 lg:flex-nowrap"
             >
-              {productLinks.map(link => (
+              {learnMoreLinks.map(link => (
                 <Link
                   key={link.to}
                   to={link.to}
-                  className="transition-colors hover:text-white"
-                  onClick={() => trackFooterNavClick(link.label, link.to)}
+                  className="whitespace-nowrap transition-colors hover:text-teal-100"
+                  onClick={() =>
+                    trackFooterNavClick(link.label, link.to, link.capabilityId)
+                  }
                 >
                   {link.label}
                 </Link>
@@ -97,14 +114,16 @@ export default function SiteFooter() {
             {!user ? (
               <nav
                 aria-label="Personas"
-                className="flex flex-wrap gap-x-5 gap-y-1 text-sm text-slate-300"
+                className="flex flex-wrap gap-x-5 gap-y-1 text-sm text-slate-300 lg:flex-nowrap"
               >
                 {personaPages.map(persona => (
                   <Link
                     key={persona.id}
                     to={persona.path}
-                    className="transition-colors hover:text-white"
-                    onClick={() => trackFooterNavClick(persona.navLabel, persona.path)}
+                    className="whitespace-nowrap transition-colors hover:text-white"
+                    onClick={() =>
+                      trackFooterNavClick(persona.navLabel, persona.path)
+                    }
                   >
                     {persona.navLabel}
                   </Link>
@@ -113,30 +132,38 @@ export default function SiteFooter() {
             ) : (
               <nav
                 aria-label="App"
-                className="flex flex-wrap gap-x-5 gap-y-1 text-sm text-slate-300"
+                className="flex flex-wrap gap-x-5 gap-y-1 text-sm text-slate-300 lg:flex-nowrap"
               >
-                {appNavLinks.map(link => (
-                  <Link
-                    key={link.to}
-                    to={link.to}
-                    className="transition-colors hover:text-white"
-                    onClick={() => trackFooterNavClick(link.label, link.to)}
-                  >
-                    {link.label}
-                  </Link>
-                ))}
+                {AUTH_NAV_CAPABILITIES_WITHOUT_GETTING_STARTED.map(
+                  capability => (
+                    <Link
+                      key={capability.id}
+                      to={capability.webRoute}
+                      className="whitespace-nowrap transition-colors hover:text-white"
+                      onClick={() =>
+                        trackFooterNavClick(
+                          capability.fullLabel,
+                          capability.webRoute,
+                          capability.analyticsId
+                        )
+                      }
+                    >
+                      {capability.fullLabel}
+                    </Link>
+                  )
+                )}
               </nav>
             )}
 
             <nav
               aria-label="Support and legal"
-              className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-400"
+              className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-400 lg:flex-nowrap"
             >
               {supportLinks.map(link => (
                 <Link
                   key={link.to}
                   to={link.to}
-                  className="transition-colors hover:text-white"
+                  className="whitespace-nowrap transition-colors hover:text-white"
                   onClick={() => trackFooterNavClick(link.label, link.to)}
                 >
                   {link.label}
@@ -147,7 +174,9 @@ export default function SiteFooter() {
         </div>
 
         <div className="mt-3 flex flex-col gap-2 border-t border-slate-700 pt-3 text-xs text-slate-400 sm:flex-row sm:items-center sm:justify-between">
-          <p>© {new Date().getFullYear()} Vehicle Vitals. All rights reserved.</p>
+          <p>
+            © {new Date().getFullYear()} Vehicle Vitals. All rights reserved.
+          </p>
           <div className="flex items-center gap-3">
             {SOCIAL_LINKS.map(({ label, href, icon }) => (
               <a

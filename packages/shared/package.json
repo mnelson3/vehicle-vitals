@@ -13,6 +13,34 @@
     "./types": {
       "types": "./dist/types.d.ts",
       "import": "./dist/types.js"
+    },
+    "./vehicleHealth": {
+      "types": "./dist/vehicleHealth.d.ts",
+      "import": "./dist/vehicleHealth.js"
+    },
+    "./maintenanceSchedules": {
+      "types": "./dist/maintenanceSchedules.d.ts",
+      "import": "./dist/maintenanceSchedules.js"
+    },
+    "./vehiclePortfolio": {
+      "types": "./dist/vehiclePortfolio.d.ts",
+      "import": "./dist/vehiclePortfolio.js"
+    },
+    "./ownershipInsights": {
+      "types": "./dist/ownershipInsights.d.ts",
+      "import": "./dist/ownershipInsights.js"
+    },
+    "./vinValidation": {
+      "types": "./dist/vinValidation.d.ts",
+      "import": "./dist/vinValidation.js"
+    },
+    "./documentAnalysisSummary": {
+      "types": "./dist/documentAnalysisSummary.d.ts",
+      "import": "./dist/documentAnalysisSummary.js"
+    },
+    "./currency": {
+      "types": "./dist/currency.d.ts",
+      "import": "./dist/currency.js"
     }
   },
   "scripts": {
@@ -27,8 +55,7 @@
     "clean": "rm -rf node_modules dist"
   },
   "dependencies": {
-    "firebase": "^12.15.0",
-    "zod": "^4.4.3"
+    "firebase": "^12.15.0"
   },
   "devDependencies": {
     "@types/node": "^22.20.0",

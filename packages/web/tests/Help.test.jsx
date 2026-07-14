@@ -1,9 +1,29 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import Help from '../src/pages/Help';
 
+function renderHelp() {
+  return render(
+    <MemoryRouter
+      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+    >
+      <Help />
+    </MemoryRouter>
+  );
+}
+
 describe('Help page', () => {
+  it('sets the document title and canonical URL via PageSEO', () => {
+    renderHelp();
+    expect(document.title).toMatch(/Help Center/i);
+    expect(document.querySelector('link[rel="canonical"]')).toHaveAttribute(
+      'href',
+      expect.stringContaining('/help')
+    );
+  });
+
   it('keeps reminder help public and omits the support skip link', () => {
     render(
       <MemoryRouter
@@ -56,5 +76,28 @@ describe('Help page', () => {
     expect(
       screen.getAllByRole('link', { name: /Compare support plans/i })[0]
     ).toHaveAttribute('href', '/app/subscription');
+  });
+
+  describe('legacy-term searchability', () => {
+    it.each([
+      ['Timeline', /What does Service History show\?/i],
+      ['Upcoming Tasks', /How do I use Maintenance Plan\?/i],
+      ['Mechanic', /How do I find nearby shops and services\?/i],
+      ['Service Providers', /How do I find nearby shops and services\?/i],
+      ['Profile', /How do profile preferences affect reminders\?/i],
+    ])(
+      'finds the current FAQ answer when searching the retired term "%s"',
+      async (legacyTerm, expectedQuestion) => {
+        renderHelp();
+        const user = userEvent.setup();
+
+        await user.type(
+          screen.getByLabelText(/Search FAQs/i),
+          legacyTerm
+        );
+
+        expect(screen.getByText(expectedQuestion)).toBeInTheDocument();
+      }
+    );
   });
 });

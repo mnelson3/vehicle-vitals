@@ -1,6 +1,9 @@
 import { createStandardVehiclePortfolio } from '@vehicle-vitals/shared';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import CollapsibleSection from '../components/CollapsibleSection';
+import GaugeDial from '../components/charts/GaugeDial';
+import WheelBreakdownChart from '../components/charts/WheelBreakdownChart';
 import { formatFileDisplay } from '../shared/fileUtils';
 import {
   addReminder,
@@ -23,8 +26,9 @@ import { createMaintenanceCalendarEvent } from '../utils/calendarService';
 import {
   buildDocumentSummary,
   getSourceSnippet,
-} from '../utils/documentAnalysisSummary';
-import { computeOwnershipInsights } from '../utils/ownershipInsights';
+} from '@vehicle-vitals/shared/documentAnalysisSummary';
+import { formatCurrency as formatCurrencyUtil } from '@vehicle-vitals/shared/currency';
+import { computeOwnershipInsights } from '@vehicle-vitals/shared/ownershipInsights';
 
 type AnalysisData = {
   path?: string;
@@ -77,6 +81,7 @@ type VehicleRecord = {
   year: string | number;
   make: string;
   model: string;
+  purchaseDate?: string;
   documentPortfolio?: {
     categories?: PortfolioCategory[];
   };
@@ -137,7 +142,7 @@ function getAnalysisBadge(confidence: number | undefined): {
     return {
       label: 'Auto-Verified',
       className:
-        'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200',
+        'bg-accent-100 text-accent-800 dark:bg-accent-900 dark:text-accent-200',
     };
   }
 
@@ -145,7 +150,7 @@ function getAnalysisBadge(confidence: number | undefined): {
     return {
       label: 'Review Suggested',
       className:
-        'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200',
+        'bg-warning-100 text-warning-800 dark:bg-warning-900 dark:text-warning-200',
     };
   }
 
@@ -175,13 +180,17 @@ function buildFutureDate(daysAhead: number): Date {
   return date;
 }
 
-function formatCurrency(value?: number): string {
-  if (typeof value !== 'number') {
-    return 'Unknown';
-  }
+const formatCurrency = formatCurrencyUtil;
 
-  return `$${value.toFixed(2)}`;
-}
+const SPEND_WHEEL_COLORS = [
+  '#22c55e',
+  '#3b82f6',
+  '#f59e0b',
+  '#a78bfa',
+  '#f43f5e',
+  '#14b8a6',
+  '#94a3b8',
+];
 
 function formatInsightDueDate(value?: string): string {
   if (!value) {
@@ -309,8 +318,7 @@ export default function Records() {
 
         existingReminders.forEach((reminder: any) => {
           const serviceType = reminder?.serviceType as
-            | Exclude<InsightActionType, 'payment_calendar'>
-            | undefined;
+            Exclude<InsightActionType, 'payment_calendar'> | undefined;
           if (
             serviceType &&
             serviceType in INSIGHT_ACTION_LABELS &&
@@ -651,7 +659,7 @@ export default function Records() {
           },
         }));
       }
-      setInsightActionMessage('Reminder saved to Upcoming Tasks.');
+      setInsightActionMessage('Reminder saved to Maintenance Plan.');
     } catch (error) {
       console.error('Failed to save insight reminder', error);
       setInsightActionMessage('Failed to save reminder.');
@@ -801,9 +809,9 @@ export default function Records() {
     missing:
       'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-100',
     'in-progress':
-      'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200',
+      'bg-warning-100 text-warning-800 dark:bg-warning-900/40 dark:text-warning-200',
     ready:
-      'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200',
+      'bg-accent-100 text-accent-800 dark:bg-accent-900/40 dark:text-accent-200',
   };
 
   const statusLabelMap: Record<PortfolioItem['status'], string> = {
@@ -826,50 +834,55 @@ export default function Records() {
           <p className="text-slate-600 dark:text-slate-400 mt-2 mb-0">
             {vehicle?.year} {vehicle?.make} {vehicle?.model} • {vehicle?.vin}
           </p>
-          <p className="text-sm text-slate-600 dark:text-slate-400 mt-2 mb-0">
-            Required records complete: {readyCount}/{requiredCount}
-          </p>
         </div>
-        <Link
-          to="/app"
-          className="inline-block px-4 py-2 border border-slate-300 dark:border-slate-700 rounded-lg no-underline text-slate-900 dark:text-slate-100"
-        >
-          Back
-        </Link>
+        <div className="flex items-center gap-4">
+          {requiredCount > 0 && (
+            <GaugeDial
+              size="sm"
+              value={Math.round((readyCount / requiredCount) * 100)}
+              label="Records Complete"
+              sublabel={`${readyCount}/${requiredCount}`}
+            />
+          )}
+          <Link
+            to="/app"
+            className="inline-block px-4 py-2 border border-slate-300 dark:border-slate-700 rounded-lg no-underline text-slate-900 dark:text-slate-100"
+          >
+            Back
+          </Link>
+        </div>
       </div>
 
       <div className="space-y-4">
         {flattenedItems.length > 0 && (
-          <section className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4">
-            <div className="flex items-start justify-between gap-3 flex-wrap">
-              <div>
-                <h2 className="font-semibold text-lg text-slate-900 dark:text-slate-100 mt-0 mb-1">
-                  Ownership Insights
-                </h2>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0 mb-0">
-                  Estimates from extracted document data. Add finance contracts,
-                  payment statements, and purchase docs to increase precision.
-                </p>
-              </div>
+          <CollapsibleSection
+            title="Ownership Insights"
+            description="Estimates from extracted document data. Add finance contracts, payment statements, and purchase docs to increase precision."
+            headerRight={
               <div className="text-xs text-slate-600 dark:text-slate-300">
                 Documents analyzed: {insights.analyzedDocumentCount}
               </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4">
+            }
+            defaultCollapsed
+          >
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div className="rounded-lg border border-slate-200 dark:border-slate-700 p-3">
                 <div className="text-xs text-slate-500 dark:text-slate-400">
                   Maintenance spend captured
                 </div>
                 <div className="text-lg font-semibold text-slate-900 dark:text-slate-100 mt-1">
-                  ${insights.maintenanceTotalCost.toFixed(2)}
+                  {formatCurrency(insights.maintenanceTotalCost)}
                 </div>
                 <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                  {insights.maintenanceDocsCount} docs • Avg $
-                  {insights.maintenanceAverageCost.toFixed(2)}
+                  {insights.maintenanceDocsCount} docs • Avg{' '}
+                  {formatCurrency(insights.maintenanceAverageCost)}
                   {insights.latestServiceDate
                     ? ` • Latest ${new Date(insights.latestServiceDate).toLocaleDateString()}`
                     : ''}
+                </div>
+                <div className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">
+                  From docs filed under Maintenance and Repair only — purchase
+                  price and finance documents are excluded.
                 </div>
               </div>
 
@@ -879,7 +892,7 @@ export default function Records() {
                 </div>
                 <div className="text-lg font-semibold text-slate-900 dark:text-slate-100 mt-1">
                   {typeof insights.estimatedMonthlyPayment === 'number'
-                    ? `$${insights.estimatedMonthlyPayment.toFixed(2)}`
+                    ? formatCurrency(insights.estimatedMonthlyPayment)
                     : 'Add finance docs'}
                 </div>
                 <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">
@@ -893,16 +906,37 @@ export default function Records() {
                 </div>
                 <div className="text-lg font-semibold text-slate-900 dark:text-slate-100 mt-1">
                   {typeof insights.estimatedValueRealized === 'number'
-                    ? `$${insights.estimatedValueRealized.toFixed(2)} realized`
+                    ? `${formatCurrency(insights.estimatedValueRealized)} realized`
                     : 'Need principal doc'}
                 </div>
                 <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                   {typeof insights.estimatedCurrentValue === 'number'
-                    ? `Est. current value $${insights.estimatedCurrentValue.toFixed(2)}`
+                    ? `Est. current value ${formatCurrency(insights.estimatedCurrentValue)}`
                     : 'Upload purchase/loan principal to unlock estimate'}
                 </div>
               </div>
             </div>
+
+            {(insights.maintenanceBreakdown || []).length > 0 && (
+              <div className="mt-4 rounded-lg border border-slate-200 dark:border-slate-700 p-3">
+                <div className="text-sm font-medium text-slate-900 dark:text-slate-100 mb-3">
+                  Maintenance Spend Breakdown
+                </div>
+                <WheelBreakdownChart
+                  segments={(insights.maintenanceBreakdown || []).map(
+                    (entry, index) => ({
+                      label: entry.label,
+                      amount: entry.amount,
+                      color:
+                        SPEND_WHEEL_COLORS[index % SPEND_WHEEL_COLORS.length],
+                    })
+                  )}
+                  formatAmount={formatCurrency}
+                  centerValue={formatCurrency(insights.maintenanceTotalCost)}
+                  centerLabel="Total spend"
+                />
+              </div>
+            )}
 
             {insights.upcomingPaymentDates.length > 0 &&
               typeof insights.estimatedMonthlyPayment === 'number' && (
@@ -923,15 +957,15 @@ export default function Records() {
                           {date}
                         </div>
                         <div className="font-medium text-slate-900 dark:text-slate-100">
-                          ${insights.estimatedMonthlyPayment.toFixed(2)}
+                          {formatCurrency(insights.estimatedMonthlyPayment)}
                         </div>
                       </div>
                     ))}
                   </div>
                   {typeof insights.estimatedPaidToDate === 'number' && (
                     <div className="text-xs text-slate-500 dark:text-slate-400 mt-2">
-                      Estimated paid to date: $
-                      {insights.estimatedPaidToDate.toFixed(2)}
+                      Estimated paid to date:{' '}
+                      {formatCurrency(insights.estimatedPaidToDate)}
                     </div>
                   )}
                 </div>
@@ -1059,7 +1093,7 @@ export default function Records() {
                         to={`/app/upcoming?vin=${encodeURIComponent(vehicle.vin)}`}
                         className="text-xs text-slate-700 dark:text-slate-200 no-underline border border-slate-300 dark:border-slate-600 rounded-md px-2 py-1"
                       >
-                        Open Upcoming Tasks
+                        Open Maintenance Plan
                       </Link>
                     </div>
 
@@ -1134,7 +1168,7 @@ export default function Records() {
                                 )
                               }
                               disabled={actingReminderIds.has(reminder.id)}
-                              className="px-2 py-1 text-[11px] rounded-md border border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300 disabled:opacity-60"
+                              className="px-2 py-1 text-[11px] rounded-md border border-accent-300 dark:border-accent-700 text-accent-700 dark:text-accent-300 disabled:opacity-60"
                             >
                               {actingReminderIds.has(reminder.id)
                                 ? 'Working...'
@@ -1162,7 +1196,7 @@ export default function Records() {
                   </div>
                 )}
             </div>
-          </section>
+          </CollapsibleSection>
         )}
 
         {categories.length === 0 && (
@@ -1181,11 +1215,14 @@ export default function Records() {
         )}
 
         {flattenedItems.length > 0 && (
-          <section className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+          <section className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:items-start">
             <div className="lg:col-span-4 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-3">
-              <h2 className="font-semibold text-lg text-slate-900 dark:text-slate-100 mt-0 mb-3 px-1">
+              <h2 className="font-semibold text-lg text-slate-900 dark:text-slate-100 mt-0 mb-1 px-1">
                 Record List
               </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0 mb-3 px-1">
+                Search and filter this vehicle's document portfolio.
+              </p>
               <div className="mb-3 space-y-2">
                 <input
                   type="search"
@@ -1223,9 +1260,6 @@ export default function Records() {
                 {filteredItems.map(entry => {
                   const isSelected = entry.key === selectedItemKey;
                   const fileCount = entry.item.files?.length || 0;
-                  const summaryFiles = (entry.item.files || [])
-                    .slice(-2)
-                    .reverse();
 
                   return (
                     <button
@@ -1243,7 +1277,7 @@ export default function Records() {
                           {entry.item.title}
                         </div>
                         <span
-                          className={`text-xs px-2 py-1 rounded-full ${statusClassMap[entry.item.status]}`}
+                          className={`shrink-0 text-xs px-2 py-1 rounded-full ${statusClassMap[entry.item.status]}`}
                         >
                           {statusLabelMap[entry.item.status]}
                         </span>
@@ -1253,27 +1287,6 @@ export default function Records() {
                         {entry.item.required ? 'Required' : 'Optional'} •{' '}
                         {fileCount} file{fileCount === 1 ? '' : 's'}
                       </div>
-                      {summaryFiles.length > 0 && (
-                        <div className="mt-2 rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 p-2 space-y-1">
-                          {summaryFiles.map((file, summaryIndex) => (
-                            <div
-                              key={`${file.path || file.url || file.name || 'file'}-${summaryIndex}`}
-                              className="text-[11px] text-slate-600 dark:text-slate-300"
-                            >
-                              <span className="font-medium text-slate-700 dark:text-slate-200">
-                                {file.name || `Document ${summaryIndex + 1}`}:
-                              </span>{' '}
-                              <span>{getDocumentSummary(file)}</span>
-                            </div>
-                          ))}
-                          {fileCount > summaryFiles.length && (
-                            <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                              +{fileCount - summaryFiles.length} more document
-                              {fileCount - summaryFiles.length === 1 ? '' : 's'}
-                            </div>
-                          )}
-                        </div>
-                      )}
                     </button>
                   );
                 })}
@@ -1285,7 +1298,7 @@ export default function Records() {
               </div>
             </div>
 
-            <div className="lg:col-span-8 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4">
+            <div className="lg:col-span-8 lg:sticky lg:top-4 max-h-[calc(100dvh-6rem)] overflow-y-auto bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4">
               {!selectedEntry ? (
                 <p className="text-slate-600 dark:text-slate-400 m-0">
                   Select a record item to view and edit details.
@@ -1456,7 +1469,7 @@ export default function Records() {
                                     <div>
                                       Total cost:{' '}
                                       {typeof extracted?.totalCost === 'number'
-                                        ? `$${extracted.totalCost.toFixed(2)}`
+                                        ? formatCurrency(extracted.totalCost)
                                         : 'n/a'}
                                     </div>
                                     <div>
@@ -1531,7 +1544,7 @@ export default function Records() {
                                   fileIndex
                                 )
                               }
-                              className="text-red-600 dark:text-red-400 bg-transparent border-0 cursor-pointer hover:opacity-70 flex-shrink-0"
+                              className="text-danger-600 dark:text-danger-400 bg-transparent border-0 cursor-pointer hover:opacity-70 flex-shrink-0"
                             >
                               Remove
                             </button>

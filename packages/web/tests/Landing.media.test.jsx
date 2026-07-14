@@ -48,11 +48,13 @@ describe('Landing media surfaces', () => {
       screen.getByRole('heading', { name: /Product proof for the story/i })
     ).toBeInTheDocument();
 
-    expect(screen.getByText(/Responsible owner/i)).toBeInTheDocument();
-    expect(screen.getByText(/Household garage/i)).toBeInTheDocument();
-    expect(screen.getByText(/New driver or new owner/i)).toBeInTheDocument();
-    expect(screen.getByText(/DIY maintainer/i)).toBeInTheDocument();
-    expect(screen.getByText(/Light fleet/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/Ownership records/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Shared garage/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Guided setup/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Hands-on maintenance/i).length).toBeGreaterThan(
+      0
+    );
+    expect(screen.getAllByText(/Work vehicles/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/Pro is the best fit/i)).toBeInTheDocument();
     expect(screen.getByText(/Forecast and automate/i)).toBeInTheDocument();
 
@@ -74,13 +76,13 @@ describe('Landing media surfaces', () => {
       screen.getAllByRole('link', { name: /Read use case/i })[0]
     ).toHaveAttribute('href', '/personas/owners');
     expect(
-      screen.getByRole('link', { name: /Open steps page/i })
-    ).toHaveAttribute('href', '/start-steps');
+      screen.getByRole('link', { name: /Open getting started/i })
+    ).toHaveAttribute('href', '/getting-started');
     expect(
-      screen.getByRole('link', { name: /Open screens page/i })
-    ).toHaveAttribute('href', '/everyday-screens');
+      screen.queryByRole('link', { name: /Open screens page/i })
+    ).not.toBeInTheDocument();
     expect(
-      screen.getByRole('link', { name: /Open video tours/i })
-    ).toHaveAttribute('href', '/short-video-tours');
+      screen.getByRole('link', { name: /Open product tour/i })
+    ).toHaveAttribute('href', '/product-tour');
   });
 });
