@@ -6,7 +6,10 @@ import PageSEO from '../components/PageSEO';
 import SiteFooter from '../components/SiteFooter';
 import SiteHeader from '../components/SiteHeader';
 import { personaPages } from '../data/personas';
-import { trackMarketingPageView, trackSignupStart } from '../shared/marketingAnalytics';
+import {
+  trackMarketingPageView,
+  trackSignupStart,
+} from '../shared/marketingAnalytics';
 import { ROUTE_SEO } from '../shared/seoMeta';
 
 const proofPoints = [
@@ -35,7 +38,7 @@ const planGuides = [
     name: 'Pro',
     audience: 'Plan and coordinate',
     description:
-      'Add calendar sync, advanced reminders, exports, and shared planning for households and active DIY owners.',
+      'Add calendar sync, advanced reminders, exports, and shared planning for shared garages and hands-on maintenance.',
   },
   {
     name: 'Premium',
@@ -63,8 +66,8 @@ export default function Landing() {
       <PageSEO meta={meta} />
       <SiteHeader overlay={false} />
       <HeaderAdBar />
-      <main className="flex-1 overflow-y-auto overflow-x-hidden bg-slate-50 dark:bg-slate-900">
-        <section className="py-8 sm:py-10 lg:py-12">
+      <main className="site-scroll-area flex-1 overflow-y-auto overflow-x-hidden bg-slate-50 dark:bg-slate-900">
+        <section className="marketing-page-section py-8 sm:py-10 lg:py-12">
           <div className="w-full max-w-7xl mx-auto px-4 sm:px-5">
             <section className="relative overflow-hidden rounded-2xl border border-slate-200 bg-slate-950 shadow-xl">
               <img
@@ -74,7 +77,7 @@ export default function Landing() {
                 loading="eager"
               />
               <div className="absolute inset-0 bg-gradient-to-r from-slate-950/85 via-slate-900/75 to-teal-950/60" />
-              <div className="relative grid gap-8 px-6 py-10 sm:px-10 sm:py-14 lg:grid-cols-[1.1fr_0.9fr] lg:px-12 lg:py-16">
+              <div className="marketing-hero-content relative grid gap-8 px-6 py-10 sm:px-10 sm:py-14 lg:grid-cols-[1.1fr_0.9fr] lg:px-12 lg:py-16">
                 <div>
                   <div className="flex items-center gap-4">
                     <img
@@ -83,7 +86,7 @@ export default function Landing() {
                       aria-hidden="true"
                       width={160}
                       height={160}
-                      className="h-30 w-30 rounded-2xl shadow-lg ring-1 ring-white/20 sm:h-40 sm:w-40"
+                      className="marketing-hero-logo h-30 w-30 rounded-2xl shadow-lg ring-1 ring-white/20 sm:h-40 sm:w-40"
                     />
                     <span className="text-sm font-semibold uppercase tracking-wide text-slate-100">
                       Vehicle Vitals
@@ -95,8 +98,8 @@ export default function Landing() {
                   </h1>
                   <p className="mt-4 max-w-2xl text-base text-slate-100/90 sm:text-lg">
                     Track service history, plan upcoming work, and prove what
-                    was done across personal cars, shared household vehicles,
-                    and light business fleets.
+                    was done across personal vehicles, shared household
+                    vehicles, and light business fleets.
                   </p>
                   <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:items-center">
                     <Link
@@ -119,7 +122,7 @@ export default function Landing() {
                   <div className="rounded-xl bg-white/12 px-4 py-3 ring-1 ring-white/20">
                     <p className="font-semibold">Track receipts</p>
                     <p className="mt-1 text-slate-100/80">
-                      Keep mechanic, DIY, and parts records together.
+                      Keep mechanic, hands-on, and parts records together.
                     </p>
                   </div>
                   <div className="rounded-xl bg-white/12 px-4 py-3 ring-1 ring-white/20">
@@ -131,15 +134,15 @@ export default function Landing() {
                   <div className="rounded-xl bg-white/12 px-4 py-3 ring-1 ring-white/20">
                     <p className="font-semibold">Scale by garage</p>
                     <p className="mt-1 text-slate-100/80">
-                      Move from first cars to DIY projects, households, and
-                      teams.
+                      Move from first vehicles to hands-on projects, shared
+                      garages, and teams.
                     </p>
                   </div>
                 </div>
               </div>
             </section>
 
-            <section className="mt-10 sm:mt-12">
+            <section className="marketing-section mt-10 sm:mt-12">
               <div className="mb-5 max-w-3xl">
                 <h2 className="font-serif text-2xl text-slate-900 dark:text-slate-100 sm:text-3xl">
                   Choose the path that matches your garage
@@ -207,7 +210,7 @@ export default function Landing() {
               </div>
             </section>
 
-            <section className="mt-10 sm:mt-12">
+            <section className="marketing-section mt-10 sm:mt-12">
               <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                 <div className="max-w-3xl">
                   <h2 className="font-serif text-2xl text-slate-900 dark:text-slate-100 sm:text-3xl">
@@ -247,7 +250,7 @@ export default function Landing() {
               </div>
             </section>
 
-            <section className="mt-10 sm:mt-12">
+            <section className="marketing-section mt-10 sm:mt-12">
               <div className="mb-5 max-w-3xl">
                 <h2 className="font-serif text-2xl text-slate-900 dark:text-slate-100 sm:text-3xl">
                   Product proof for the story
@@ -259,7 +262,7 @@ export default function Landing() {
                 </p>
               </div>
 
-              <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+              <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
                 <article className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
                   <h3 className="font-serif text-xl text-slate-900 dark:text-slate-100">
                     3-step onboarding guide
@@ -269,46 +272,31 @@ export default function Landing() {
                     learning the whole product at once.
                   </p>
                   <Link
-                    to="/start-steps"
+                    to="/getting-started"
                     className="mt-4 inline-flex items-center rounded-lg bg-slate-800 px-3 py-2 text-sm font-medium text-white transition hover:bg-slate-950 dark:bg-slate-200 dark:text-slate-900 dark:hover:bg-white"
                   >
-                    Open steps page
+                    Open getting started
                   </Link>
                 </article>
                 <article className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
                   <h3 className="font-serif text-xl text-slate-900 dark:text-slate-100">
-                    Screen gallery
+                    Product tour
                   </h3>
                   <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
-                    See common web screens for records, timelines, providers,
-                    and garage management.
+                    Explore core workflows with short videos and product screens
+                    organized around the same capability story.
                   </p>
                   <Link
-                    to="/everyday-screens"
+                    to="/product-tour"
                     className="mt-4 inline-flex items-center rounded-lg bg-slate-800 px-3 py-2 text-sm font-medium text-white transition hover:bg-slate-950 dark:bg-slate-200 dark:text-slate-900 dark:hover:bg-white"
                   >
-                    Open screens page
-                  </Link>
-                </article>
-                <article className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-                  <h3 className="font-serif text-xl text-slate-900 dark:text-slate-100">
-                    Video tour library
-                  </h3>
-                  <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
-                    Watch short product tours for onboarding, service tracking,
-                    and web-to-mobile continuity.
-                  </p>
-                  <Link
-                    to="/short-video-tours"
-                    className="mt-4 inline-flex items-center rounded-lg bg-slate-800 px-3 py-2 text-sm font-medium text-white transition hover:bg-slate-950 dark:bg-slate-200 dark:text-slate-900 dark:hover:bg-white"
-                  >
-                    Open video tours
+                    Open product tour
                   </Link>
                 </article>
               </div>
             </section>
 
-            <section className="mt-10 sm:mt-12 grid grid-cols-1 gap-5 md:grid-cols-3">
+            <section className="marketing-section mt-10 sm:mt-12 grid grid-cols-1 gap-5 md:grid-cols-3">
               {proofPoints.map(point => (
                 <div
                   key={point.title}

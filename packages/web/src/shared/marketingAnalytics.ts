@@ -193,16 +193,69 @@ export function trackBeginCheckout(
   dispatch('begin_checkout', { plan_tier: planTier, billing_period: billingPeriod });
 }
 
+/**
+ * GA4's standard ecommerce 'purchase' event — required for GA4 revenue
+ * reporting and for importing subscription conversions into Google Ads.
+ * Fire once, on confirmed return from a successful Stripe Checkout
+ * redirect (see SubscriptionPage's pending-checkout handoff); there's no
+ * Stripe session/invoice ID available client-side here to dedupe against,
+ * so the synthetic transaction_id below is best-effort, not authoritative.
+ */
+export function trackPurchase(
+  planTier: string,
+  billingPeriod: 'monthly' | 'annual',
+  value: number,
+  currency = 'USD'
+): void {
+  dispatch('purchase', {
+    transaction_id: `${planTier}_${billingPeriod}_${Date.now()}`,
+    value,
+    currency,
+    plan_tier: planTier,
+    billing_period: billingPeriod,
+  });
+}
+
 export function trackContactSalesClick(ctaLocation: string): void {
   dispatch('contact_sales_click', { cta_location: ctaLocation });
 }
 
 // ─── Navigation events ────────────────────────────────────────────────────────
 
-export function trackHeaderNavClick(label: string, destination: string): void {
-  dispatch('header_nav_click', { cta_label: label, destination });
+export function trackHeaderNavClick(
+  label: string,
+  destination: string,
+  capabilityId?: string
+): void {
+  dispatch('header_nav_click', {
+    cta_label: label,
+    destination,
+    ...(capabilityId && { capability_id: capabilityId }),
+  });
 }
 
-export function trackFooterNavClick(label: string, destination: string): void {
-  dispatch('footer_nav_click', { cta_label: label, destination });
+export function trackFooterNavClick(
+  label: string,
+  destination: string,
+  capabilityId?: string
+): void {
+  dispatch('footer_nav_click', {
+    cta_label: label,
+    destination,
+    ...(capabilityId && { capability_id: capabilityId }),
+  });
+}
+
+export function trackHelpSearch(query: string, resultCount: number): void {
+  dispatch('help_search', { query, result_count: resultCount });
+}
+
+export function trackOnboardingStepAction(
+  stepId: string,
+  actionLabel: string
+): void {
+  dispatch('onboarding_step_action', {
+    step_id: stepId,
+    cta_label: actionLabel,
+  });
 }

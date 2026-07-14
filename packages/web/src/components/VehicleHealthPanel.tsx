@@ -1,7 +1,14 @@
 import { Link } from 'react-router-dom';
 
-import { computeVehicleHealthSnapshot } from '@vehicle-vitals/shared';
 import type { UserTier } from '../shared/featureFlags';
+import { formatCurrencyRange } from '@vehicle-vitals/shared/currency';
+import {
+  getGarageCompletenessTierFlag,
+  getGarageCompletenessTierLabel,
+  type GarageCompletenessResult,
+} from '../utils/garageCompleteness';
+import { resolveVehicleHealthSnapshot } from '../utils/vehicleHealthSnapshot';
+import GaugeDial from './charts/GaugeDial';
 
 interface MaintenanceEntry {
   id?: string;
@@ -17,6 +24,7 @@ interface VehicleInfo {
   vin: string;
   mileage?: string;
   purchaseDate?: string;
+  vehicleHealthSnapshot?: unknown;
 }
 
 interface Props {
@@ -26,12 +34,15 @@ interface Props {
   hasPlanning12mo: boolean;
   hasPlanning36mo: boolean;
   loading?: boolean;
-}
-
-function formatCurrencyRange(low?: number | null, high?: number | null) {
-  const safeLow = Math.max(0, Math.round(low || 0));
-  const safeHigh = Math.max(safeLow, Math.round(high || 0));
-  return `$${safeLow.toLocaleString()}-$${safeHigh.toLocaleString()}`;
+  /** This vehicle's document completeness — drives forecast confidence. */
+  vehicleCompleteness?: {
+    complete: number;
+    required: number;
+    optionalComplete?: number;
+    optionalTotal?: number;
+  };
+  /** Garage-wide completeness, shown as a small secondary tier chip. */
+  garageCompleteness?: GarageCompletenessResult;
 }
 
 function formatPercent(value?: number | null) {
@@ -63,13 +74,13 @@ function formatDue(component: {
 function statusClasses(status: string) {
   switch (status) {
     case 'overdue':
-      return 'border-red-200 bg-red-50 text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-200';
+      return 'border-danger-200 bg-danger-50 text-danger-700 dark:border-danger-900/50 dark:bg-danger-950/30 dark:text-danger-200';
     case 'service_soon':
-      return 'border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-900/50 dark:bg-orange-950/30 dark:text-orange-200';
+      return 'border-warning-200 bg-warning-50 text-warning-700 dark:border-warning-900/50 dark:bg-warning-950/30 dark:text-warning-200';
     case 'watch':
-      return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200';
+      return 'border-warning-200 bg-warning-50 text-warning-700 dark:border-warning-900/50 dark:bg-warning-950/30 dark:text-warning-200';
     default:
-      return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-200';
+      return 'border-accent-200 bg-accent-50 text-accent-700 dark:border-accent-900/50 dark:bg-accent-950/30 dark:text-accent-200';
   }
 }
 
@@ -80,8 +91,10 @@ export default function VehicleHealthPanel({
   hasPlanning12mo,
   hasPlanning36mo,
   loading = false,
+  vehicleCompleteness,
+  garageCompleteness,
 }: Props) {
-  const snapshot = computeVehicleHealthSnapshot(vehicle, maintenanceEntries);
+  const snapshot = resolveVehicleHealthSnapshot(vehicle, maintenanceEntries);
   const visibleComponents =
     tier === 'free' ? snapshot.components.slice(0, 3) : snapshot.components.slice(0, 6);
   const hiddenCount = Math.max(0, snapshot.components.length - visibleComponents.length);
@@ -107,29 +120,33 @@ export default function VehicleHealthPanel({
 
   return (
     <section className="mb-4 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="mb-1 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
-            Vehicle Health
-          </p>
+      <p className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
+        Vehicle Health
+        {garageCompleteness && garageCompleteness.requiredTotal > 0 && (
+          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium normal-case tracking-normal text-slate-600 dark:bg-slate-700 dark:text-slate-300">
+            {getGarageCompletenessTierFlag(garageCompleteness.tier)}{' '}
+            {getGarageCompletenessTierLabel(garageCompleteness.tier)} garage
+          </span>
+        )}
+      </p>
+      <div className="flex items-center gap-4">
+        <div className="shrink-0 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-700 dark:bg-slate-900">
+          <GaugeDial
+            size="md"
+            value={snapshot.overallHealthScore}
+            formatValue={v => `${Math.round(v)}`}
+            label="Health Score"
+            sublabel={`${snapshot.overallConfidenceBand} confidence`}
+          />
+        </div>
+        <div className="min-w-0 flex-1">
           <h4 className="m-0 text-lg font-semibold text-slate-900 dark:text-slate-100">
             Remaining-life forecast
           </h4>
-          <p className="mb-0 mt-1 max-w-2xl text-sm text-slate-600 dark:text-slate-400">
-            Estimated from mileage and recorded service history. Keep your data
-            current to improve forecast accuracy.
+          <p className="mb-0 mt-1 text-sm text-slate-600 dark:text-slate-400">
+            Estimated from mileage and recorded service history. Keep this
+            vehicle's records current to improve forecast accuracy.
           </p>
-        </div>
-        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-right dark:border-slate-700 dark:bg-slate-900">
-          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-            Health Score
-          </div>
-          <div className="mt-1 text-3xl font-bold text-slate-900 dark:text-slate-100">
-            {snapshot.overallHealthScore}
-          </div>
-          <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-            {snapshot.overallConfidenceBand} confidence
-          </div>
         </div>
       </div>
 
@@ -158,11 +175,46 @@ export default function VehicleHealthPanel({
         </div>
         <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-900">
           <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-            Accuracy Tip
+            Record Completeness
           </div>
-          <div className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+          <div className="mt-1 text-base font-semibold text-slate-900 dark:text-slate-100">
+            {vehicleCompleteness && vehicleCompleteness.required > 0
+              ? `${vehicleCompleteness.complete}/${vehicleCompleteness.required} required`
+              : 'No required records yet'}
+          </div>
+          {vehicleCompleteness && vehicleCompleteness.required > 0 && (
+            <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
+              <div
+                className="h-full rounded-full bg-accent-500"
+                style={{
+                  width: `${Math.round(
+                    (vehicleCompleteness.complete / vehicleCompleteness.required) *
+                      100
+                  )}%`,
+                }}
+              />
+            </div>
+          )}
+          {!!vehicleCompleteness?.optionalTotal && (
+            <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              +{vehicleCompleteness.optionalComplete ?? 0}/
+              {vehicleCompleteness.optionalTotal} optional records added
+            </div>
+          )}
+          <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
             {snapshot.accuracyTip}
           </div>
+          <p className="mb-0 mt-2 text-[11px] text-slate-400 dark:text-slate-500">
+            Required records (title, insurance, registration, etc.) are what
+            this forecast is based on — optional records add extra detail but
+            aren't scored.
+          </p>
+          <Link
+            to={`/app/records/${vehicle.vin}`}
+            className="mt-2 inline-block text-xs font-medium text-teal-700 hover:underline dark:text-teal-400"
+          >
+            View records →
+          </Link>
         </div>
       </div>
 
@@ -182,39 +234,21 @@ export default function VehicleHealthPanel({
                   <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                     {component.label}
                   </div>
-                  <div className="mt-1 text-2xl font-bold text-slate-900 dark:text-slate-100">
-                    {formatPercent(component.remainingLifePercent)}
-                  </div>
+                  <span
+                    className={`mt-1 inline-block rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${statusClasses(
+                      component.status
+                    )}`}
+                  >
+                    {component.status.replace('_', ' ')}
+                  </span>
                 </div>
-                <span
-                  className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${statusClasses(
-                    component.status
-                  )}`}
-                >
-                  {component.status.replace('_', ' ')}
-                </span>
-              </div>
-
-              <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
-                <div
-                  className={`h-full rounded-full ${
-                    component.status === 'overdue'
-                      ? 'bg-red-500'
-                      : component.status === 'service_soon'
-                        ? 'bg-orange-500'
-                        : component.status === 'watch'
-                          ? 'bg-amber-500'
-                          : 'bg-emerald-500'
-                  }`}
-                  style={{
-                    width: `${Math.max(
-                      5,
-                      Math.min(
-                        100,
-                        Math.round((component.remainingLifePercent || 0) * 100)
-                      )
-                    )}%`,
-                  }}
+                <GaugeDial
+                  size="sm"
+                  value={Math.max(
+                    0,
+                    Math.min(100, Math.round((component.remainingLifePercent || 0) * 100))
+                  )}
+                  formatValue={() => formatPercent(component.remainingLifePercent)}
                 />
               </div>
 

@@ -19,7 +19,7 @@ import {
   snoozeReminder,
   updateVehicle,
 } from '../src/shared/firestoreService';
-import { computeOwnershipInsights } from '../src/utils/ownershipInsights';
+import { computeOwnershipInsights } from '@vehicle-vitals/shared/ownershipInsights';
 
 vi.mock('../src/shared/firestoreService', () => ({
   addReminder: vi.fn(),
@@ -47,7 +47,7 @@ vi.mock('../src/utils/calendarService', () => ({
   createMaintenanceCalendarEvent: vi.fn(),
 }));
 
-vi.mock('../src/utils/ownershipInsights', () => ({
+vi.mock('@vehicle-vitals/shared/ownershipInsights', () => ({
   computeOwnershipInsights: vi.fn(),
 }));
 
@@ -93,6 +93,7 @@ const BASE_INSIGHTS = {
   estimatedValueRealized: 3000,
   estimatedPaidToDate: 5106,
   upcomingPaymentDates: ['6/1/2026'],
+  maintenanceBreakdown: [{ label: 'Oil Change', amount: 250 }],
 };
 
 function renderRecords() {
@@ -139,6 +140,15 @@ describe('Records scheduled insight actions', () => {
     renderRecords();
 
     await waitFor(() => {
+      expect(
+        screen.getByRole('button', { name: /Ownership Insights/i })
+      ).toBeInTheDocument();
+    });
+    fireEvent.click(
+      screen.getByRole('button', { name: /Ownership Insights/i })
+    );
+
+    await waitFor(() => {
       expect(screen.getByText('Scheduled Insight Actions')).toBeInTheDocument();
     });
 
@@ -168,6 +178,15 @@ describe('Records scheduled insight actions', () => {
 
     await waitFor(() => {
       expect(
+        screen.getByRole('button', { name: /Ownership Insights/i })
+      ).toBeInTheDocument();
+    });
+    fireEvent.click(
+      screen.getByRole('button', { name: /Ownership Insights/i })
+    );
+
+    await waitFor(() => {
+      expect(
         screen.getByRole('button', { name: 'Resume' })
       ).toBeInTheDocument();
     });
@@ -194,6 +213,15 @@ describe('Records scheduled insight actions', () => {
 
     await waitFor(() => {
       expect(
+        screen.getByRole('button', { name: /Ownership Insights/i })
+      ).toBeInTheDocument();
+    });
+    fireEvent.click(
+      screen.getByRole('button', { name: /Ownership Insights/i })
+    );
+
+    await waitFor(() => {
+      expect(
         screen.getByRole('button', { name: 'Complete' })
       ).toBeInTheDocument();
     });
@@ -217,6 +245,15 @@ describe('Records scheduled insight actions', () => {
     ]);
 
     renderRecords();
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('button', { name: /Ownership Insights/i })
+      ).toBeInTheDocument();
+    });
+    fireEvent.click(
+      screen.getByRole('button', { name: /Ownership Insights/i })
+    );
 
     await waitFor(() => {
       expect(

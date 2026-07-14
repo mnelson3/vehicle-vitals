@@ -5,6 +5,7 @@ import '../components/app_bottom_nav.dart';
 import '../models/maintenance.dart';
 import '../models/vehicle.dart';
 import '../services/firestore_service.dart';
+import '../utils/number_format.dart';
 
 class TimelineDashboardScreen extends StatefulWidget {
   const TimelineDashboardScreen({super.key});
@@ -107,7 +108,7 @@ class _TimelineDashboardScreenState extends State<TimelineDashboardScreen> {
 
     if (_loading) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Timeline Dashboard')),
+        appBar: AppBar(title: const Text('Service History')),
         body: const Center(child: CircularProgressIndicator()),
         bottomNavigationBar: const AppBottomNav(currentIndex: 2),
       );
@@ -115,7 +116,7 @@ class _TimelineDashboardScreenState extends State<TimelineDashboardScreen> {
 
     if (_error != null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Timeline Dashboard')),
+        appBar: AppBar(title: const Text('Service History')),
         body: Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
@@ -129,7 +130,7 @@ class _TimelineDashboardScreenState extends State<TimelineDashboardScreen> {
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'Unable to load timeline: $_error',
+                  'Unable to load service history: $_error',
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 12),
@@ -147,7 +148,7 @@ class _TimelineDashboardScreenState extends State<TimelineDashboardScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Timeline Dashboard'),
+        title: const Text('Service History'),
         actions: [
           IconButton(onPressed: _loadTimeline, icon: const Icon(Icons.refresh)),
         ],
@@ -158,7 +159,7 @@ class _TimelineDashboardScreenState extends State<TimelineDashboardScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Timeline Summary',
+              'Service History Summary',
               style: Theme.of(context).textTheme.titleLarge,
             ),
             const SizedBox(height: 12),
@@ -174,7 +175,7 @@ class _TimelineDashboardScreenState extends State<TimelineDashboardScreen> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: _SummaryCard(
-                    title: 'Timeline Events',
+                    title: 'Service Records',
                     value: filteredEvents.length.toString(),
                     icon: Icons.timeline,
                   ),
@@ -183,63 +184,58 @@ class _TimelineDashboardScreenState extends State<TimelineDashboardScreen> {
                 Expanded(
                   child: _SummaryCard(
                     title: 'Total Cost',
-                    value: '\$${filteredCost.toStringAsFixed(2)}',
+                    value: formatCurrencyAmount(filteredCost),
                     icon: Icons.attach_money,
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: DropdownButtonFormField<String>(
-                    initialValue: _selectedVinFilter,
-                    decoration: const InputDecoration(
-                      labelText: 'Vehicle',
-                      border: OutlineInputBorder(),
-                      isDense: true,
+            DropdownButtonFormField<String>(
+              initialValue: _selectedVinFilter,
+              decoration: const InputDecoration(
+                labelText: 'Vehicle',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+              items: [
+                const DropdownMenuItem(
+                  value: 'all',
+                  child: Text('All vehicles'),
+                ),
+                ..._vehicles.map((vehicle) {
+                  return DropdownMenuItem(
+                    value: vehicle.vin,
+                    child: Text(
+                      '${vehicle.year} ${vehicle.make} ${vehicle.model}',
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    items: [
-                      const DropdownMenuItem(
-                        value: 'all',
-                        child: Text('All vehicles'),
-                      ),
-                      ..._vehicles.map((vehicle) {
-                        return DropdownMenuItem(
-                          value: vehicle.vin,
-                          child: Text(
-                            '${vehicle.year} ${vehicle.make} ${vehicle.model}',
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        );
-                      }),
-                    ],
-                    onChanged: (value) {
-                      if (value == null) return;
-                      setState(() {
-                        _selectedVinFilter = value;
-                      });
-                    },
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Wrap(
-                  spacing: 6,
-                  children: [30, 90, 365, 0].map((days) {
-                    final selected = _daysFilter == days;
-                    return ChoiceChip(
-                      label: Text(_dateFilterLabel(days)),
-                      selected: selected,
-                      onSelected: (_) {
-                        setState(() {
-                          _daysFilter = days;
-                        });
-                      },
-                    );
-                  }).toList(),
-                ),
+                  );
+                }),
               ],
+              onChanged: (value) {
+                if (value == null) return;
+                setState(() {
+                  _selectedVinFilter = value;
+                });
+              },
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [30, 90, 365, 0].map((days) {
+                final selected = _daysFilter == days;
+                return ChoiceChip(
+                  label: Text(_dateFilterLabel(days)),
+                  selected: selected,
+                  onSelected: (_) {
+                    setState(() {
+                      _daysFilter = days;
+                    });
+                  },
+                );
+              }).toList(),
             ),
             const SizedBox(height: 16),
             Text('Event Feed', style: Theme.of(context).textTheme.titleMedium),
@@ -263,7 +259,7 @@ class _TimelineDashboardScreenState extends State<TimelineDashboardScreen> {
                             ),
                             trailing: event.entry.cost > 0
                                 ? Text(
-                                    '\$${event.entry.cost.toStringAsFixed(2)}',
+                                    formatCurrencyAmount(event.entry.cost),
                                     style: const TextStyle(
                                       fontWeight: FontWeight.w700,
                                     ),

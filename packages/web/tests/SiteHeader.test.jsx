@@ -57,29 +57,29 @@ describe('SiteHeader', () => {
 
     const header = screen.getByRole('banner');
     const ownersLink = within(header).getByRole('link', {
-      name: /For Owners/i,
+      name: /Ownership Records/i,
     });
 
     expect(ownersLink).toBeVisible();
     expect(ownersLink).toHaveAttribute('href', '/personas/owners');
     expect(
-      within(header).getByRole('link', { name: /For Households/i })
+      within(header).getByRole('link', { name: /Shared Garage/i })
     ).toBeVisible();
     expect(
-      within(header).getByRole('link', { name: /New Drivers/i })
+      within(header).getByRole('link', { name: /Guided Setup/i })
     ).toHaveAttribute('href', '/personas/new-drivers');
     expect(
-      within(header).getByRole('link', { name: /^DIY$/i })
+      within(header).getByRole('link', { name: /Hands-On Maintenance/i })
     ).toHaveAttribute('href', '/personas/diy-maintainers');
     expect(
-      within(header).getByRole('link', { name: /Light Fleets/i })
+      within(header).getByRole('link', { name: /Work Vehicles/i })
     ).toHaveAttribute('href', '/personas/light-fleets');
     expect(
-      within(header).getByRole('link', { name: /Pricing/i })
-    ).toHaveAttribute('href', '/subscription');
+      within(header).queryByRole('link', { name: /Pricing/i })
+    ).not.toBeInTheDocument();
     expect(
-      within(header).getByRole('link', { name: /Product Tour/i })
-    ).toBeVisible();
+      within(header).queryByRole('link', { name: /Product Tour/i })
+    ).not.toBeInTheDocument();
     expect(
       within(header).queryByRole('link', { name: /Subscriptions/i })
     ).not.toBeInTheDocument();
@@ -141,16 +141,22 @@ describe('SiteHeader', () => {
       within(header).queryByRole('link', { name: /Help & How-To/i })
     ).not.toBeInTheDocument();
 
+    // Product Tour is marketing content, not a capability, but stays
+    // available for continuity once signed in.
+    expect(
+      within(header).getByRole('link', { name: /Product Tour/i })
+    ).toHaveAttribute('href', '/product-tour');
+
     expect(garageLink).toBeVisible();
     expect(gettingStartedLink).toBeVisible();
     expect(
-      within(header).getByRole('link', { name: /^Profile$/i })
+      within(header).getByRole('link', { name: /^Account$/i })
     ).toBeVisible();
     expect(
-      within(header).getByRole('link', { name: /^Timeline$/i })
+      within(header).getByRole('link', { name: /^Service History$/i })
     ).toBeVisible();
     expect(
-      within(header).getByRole('link', { name: /^Upcoming$/i })
+      within(header).getByRole('link', { name: /^Maintenance Plan$/i })
     ).toBeVisible();
 
     // Getting Started should appear before app workspace links.
@@ -166,5 +172,42 @@ describe('SiteHeader', () => {
 
     fireEvent.click(signOutButton);
     expect(authState.signOut).toHaveBeenCalledTimes(1);
+  });
+
+  it('pairs Getting Started with Product Tour ahead of the capability links, with Account last', () => {
+    authState.user = { uid: 'user-1', isAnonymous: false };
+
+    renderHeader();
+
+    const header = screen.getByRole('banner');
+    const expectedOrder = [
+      'Getting Started',
+      'Product Tour',
+      'Garage',
+      'Service History',
+      'Maintenance Plan',
+      'Shops & Services',
+      'Account',
+    ];
+    const links = expectedOrder.map(name =>
+      within(header).getByRole('link', {
+        name: new RegExp(`^${name}$`, 'i'),
+      })
+    );
+
+    for (let i = 0; i < links.length - 1; i += 1) {
+      expect(
+        links[i].compareDocumentPosition(links[i + 1]) &
+          Node.DOCUMENT_POSITION_FOLLOWING
+      ).toBeGreaterThan(0);
+    }
+
+    // The pair sits in its own margined wrapper so it reads as visually
+    // separated from the capability links, without breaking the flex-wrap
+    // layout the rest of the nav relies on at narrow widths.
+    const gettingStartedLink = within(header).getByRole('link', {
+      name: /^Getting Started$/i,
+    });
+    expect(gettingStartedLink.parentElement.className).toMatch(/mr-4/);
   });
 });

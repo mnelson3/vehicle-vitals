@@ -24,11 +24,13 @@ vi.mock('../src/hooks/useVehicleOptions', () => ({
   }),
 }));
 
+const mockGetMaintenanceEntries = vi.fn().mockResolvedValue([]);
+
 vi.mock('../src/shared/firestoreService', () => ({
   addMaintenanceEntry: vi.fn(),
   deleteVehicle: (...args) => mockDeleteVehicle(...args),
   getAttachmentAnalyses: vi.fn().mockResolvedValue([]),
-  getMaintenanceEntries: vi.fn().mockResolvedValue([]),
+  getMaintenanceEntries: (...args) => mockGetMaintenanceEntries(...args),
   getVehicle: (...args) => mockGetVehicle(...args),
   updateVehicle: (...args) => mockUpdateVehicle(...args),
 }));
@@ -48,6 +50,13 @@ vi.mock('../src/utils/calendarService', () => ({
 
 vi.mock('../src/utils/vehicleService', () => ({
   lookupVin: (...args) => mockLookupVin(...args),
+  getMaintenancePlan: vi.fn(() =>
+    Promise.resolve({
+      strategy: 'static_schedule_v1',
+      modelSpecific: false,
+      items: [],
+    })
+  ),
 }));
 
 vi.mock('../src/utils/vehicleTransferService', () => ({
@@ -56,10 +65,6 @@ vi.mock('../src/utils/vehicleTransferService', () => ({
 
 vi.mock('../src/utils/vehiclePhotoService', () => ({
   findVehiclePhotoFromWeb: (...args) => mockFindVehiclePhotoFromWeb(...args),
-}));
-
-vi.mock('@vehicle-vitals/shared', () => ({
-  getUpcomingMaintenance: vi.fn(() => []),
 }));
 
 vi.mock('react-router-dom', async () => {
@@ -103,6 +108,7 @@ describe('EditVehicle page', () => {
     );
     mockGetVehicle.mockResolvedValue({ ...BASE_VEHICLE });
     mockFindVehiclePhotoFromWeb.mockResolvedValue(null);
+    mockGetMaintenanceEntries.mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -252,7 +258,7 @@ describe('EditVehicle page', () => {
       year: '2021',
       recallsCount: 1,
       recallsSource: 'NHTSA',
-      vehicleType: 'Passenger Car',
+      vehicleType: 'Passenger Vehicle',
       bodyClass: 'Sedan',
       fuelType: 'Gasoline',
       engineType: 'I4',
@@ -291,5 +297,50 @@ describe('EditVehicle page', () => {
       'VIN lookup currently supports VIN only. Detected HIN. You can still save this vehicle ID and edit details manually.'
     );
     expect(mockLookupVin).not.toHaveBeenCalled();
+  });
+
+  it('offers the current shop-type taxonomy in the Who did it dropdown', async () => {
+    renderPage();
+
+    const select = await waitFor(() => screen.getByLabelText(/who did it/i));
+    const optionLabels = Array.from(select.options).map(o => o.textContent);
+
+    expect(optionLabels).toEqual([
+      'Self-service',
+      'Repair shop',
+      'Dealership',
+      'Body shop',
+      'Car wash',
+      'Detailer',
+    ]);
+  });
+
+  it('still displays retired performedBy values on entries saved before this taxonomy shipped', async () => {
+    mockGetMaintenanceEntries.mockResolvedValue([
+      {
+        id: 'legacy-1',
+        title: 'Oil change',
+        cost: '80',
+        date: '2024-01-01T00:00:00.000Z',
+        performedBy: 'mechanic',
+        coverage: 'parts_and_labor',
+        notes: '',
+      },
+      {
+        id: 'legacy-2',
+        title: 'Fleet inspection',
+        cost: '120',
+        date: '2024-02-01T00:00:00.000Z',
+        performedBy: 'business',
+        coverage: 'parts_and_labor',
+        notes: '',
+      },
+    ]);
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText(/Mechanic/)).toBeInTheDocument();
+      expect(screen.getByText(/Business-maintained/)).toBeInTheDocument();
+    });
   });
 });

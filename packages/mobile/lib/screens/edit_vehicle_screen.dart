@@ -7,15 +7,17 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../components/safe_back_button.dart';
 import '../models/vehicle.dart';
 import '../services/firestore_service.dart';
 import '../services/record_storage_service.dart';
 import '../services/vehicle_photo_service.dart';
 import '../services/vehicle_transfer_service.dart';
+import '../utils/vin_validation.dart' as vin_validation;
 
 const List<String> _vehicleTypeOptions = [
-  'Car',
-  'Truck',
+  'Passenger Vehicle',
+  'Commercial Vehicle',
   'Motorcycle',
   'Recreational Vehicle (RV)',
   'Boat',
@@ -79,8 +81,6 @@ class _EditVehicleScreenState extends State<EditVehicleScreen> {
   final _vehiclePhotoService = VehiclePhotoService();
   final _vehicleTransferService = VehicleTransferService();
   final _transferEmailController = TextEditingController();
-
-  bool _looksLikeVin(String value) => value.trim().length == 17;
 
   @override
   void initState() {
@@ -150,12 +150,13 @@ class _EditVehicleScreenState extends State<EditVehicleScreen> {
 
   Future<void> _lookupVinInsights() async {
     final vin = _vinController.text.trim().toUpperCase();
-    if (!_looksLikeVin(vin)) {
+    final validationError = vin_validation.getVinLookupValidationError(vin);
+    if (validationError != null) {
       final colorScheme = Theme.of(context).colorScheme;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text(
-            'VIN lookup requires a 17-character VIN. Non-VIN assets can still be tracked manually.',
+          content: Text(
+            '$validationError Non-VIN assets can still be tracked manually.',
           ),
           backgroundColor: colorScheme.error,
         ),
@@ -654,6 +655,7 @@ class _EditVehicleScreenState extends State<EditVehicleScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Edit Vehicle'),
+        leading: const SafeBackButton(),
         actions: [
           IconButton(
             onPressed: _deleteVehicle,

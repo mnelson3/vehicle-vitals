@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import PageSEO from '../components/PageSEO';
 import {
+  trackPaymentCompleted,
   trackPaymentInitiated,
   trackSubscriptionPageView,
 } from '../shared/adAnalytics';
@@ -10,6 +11,7 @@ import {
   trackPricingBillingToggle,
   trackPricingPageView,
   trackPricingPlanClick,
+  trackPurchase,
 } from '../shared/marketingAnalytics';
 import { ROUTE_SEO } from '../shared/seoMeta';
 import {
@@ -30,6 +32,39 @@ import {
 } from '../shared/subscriptionService';
 import { useSubscription } from '../shared/useMonetization';
 import { personaPages } from '../data/personas';
+
+// Stripe's success_url here carries only `?checkout=success` (no session ID),
+// so the plan/price picked before the full-page redirect to Checkout has to
+// be handed to ourselves across that redirect some other way. sessionStorage
+// survives it; consuming (not just reading) it on return means a page
+// refresh on the success page won't re-fire the purchase event.
+const PENDING_CHECKOUT_KEY = 'vv_pending_checkout';
+
+interface PendingCheckout {
+  tier: UserTier;
+  billingPeriod: 'monthly' | 'annual';
+  amount: number;
+}
+
+function persistPendingCheckout(checkout: PendingCheckout): void {
+  try {
+    sessionStorage.setItem(PENDING_CHECKOUT_KEY, JSON.stringify(checkout));
+  } catch {
+    // sessionStorage unavailable (private mode, storage full) — the
+    // purchase event just won't fire on return; non-fatal.
+  }
+}
+
+function consumePendingCheckout(): PendingCheckout | null {
+  try {
+    const raw = sessionStorage.getItem(PENDING_CHECKOUT_KEY);
+    if (!raw) return null;
+    sessionStorage.removeItem(PENDING_CHECKOUT_KEY);
+    return JSON.parse(raw) as PendingCheckout;
+  } catch {
+    return null;
+  }
+}
 
 const featureOrder = [
   'vehicle_limit',
@@ -71,11 +106,11 @@ const planPositioning: Record<
     audience: 'Plan and coordinate',
     capacity: 'Capacity: up to 10 vehicles',
     promise:
-      'Turn maintenance into a coordinated plan with better reminders, calendar sync, exports, and household-ready workflows.',
+      'Turn maintenance into a coordinated plan with better reminders, calendar sync, exports, and shared-garage-ready workflows.',
     highlights: [
       'Advanced reminders and 12-month maintenance planning',
       'Calendar sync plus PDF and Excel exports',
-      'Good fit for households and active DIY maintainers',
+      'Good fit for shared garages and hands-on maintenance',
     ],
   },
   premium: {
@@ -86,7 +121,7 @@ const planPositioning: Record<
     highlights: [
       '36-month forecasts and AI predictions',
       'Cloud sync, API access, and automation options',
-      'Good fit for power users, serious DIY tracking, and light operations',
+      'Good fit for power users, hands-on maintenance, and work vehicles',
     ],
   },
   enterprise: {
@@ -133,7 +168,7 @@ const pricingDimensions = [
   {
     label: 'Coordination',
     free: 'Personal use',
-    pro: 'Household and DIY workflows',
+    pro: 'Shared garage and hands-on workflows',
     premium: 'Power-user automation',
     enterprise: 'Team controls and governance',
   },
@@ -180,6 +215,19 @@ export default function SubscriptionPage() {
     return status === 'success' || status === 'cancelled' ? status : '';
   }, [location.search]);
 
+  useEffect(() => {
+    if (checkoutStatus !== 'success') return;
+    const pending = consumePendingCheckout();
+    if (!pending) return;
+    trackPurchase(pending.tier, pending.billingPeriod, pending.amount);
+    trackPaymentCompleted(
+      pending.tier,
+      pending.amount,
+      'USD',
+      pending.billingPeriod
+    );
+  }, [checkoutStatus]);
+
   if (isLoading) {
     return (
       <div className="mx-auto w-full max-w-7xl px-5 py-6">
@@ -193,7 +241,7 @@ export default function SubscriptionPage() {
   const tiers: UserTier[] = ['free', 'pro', 'premium', 'enterprise'];
 
   return (
-    <div className="mx-auto w-full max-w-7xl px-5 py-6">
+    <div className="marketing-pricing-page mx-auto w-full max-w-7xl px-5 py-6">
       <PageSEO meta={ROUTE_SEO['/subscription']} />
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-900">
         <h1 className="text-3xl font-bold text-slate-900 dark:text-slate-100">
@@ -223,12 +271,12 @@ export default function SubscriptionPage() {
         )}
 
         {checkoutStatus === 'success' && (
-          <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-200">
+          <div className="mt-4 rounded-lg border border-accent-200 bg-accent-50 px-4 py-3 text-sm text-accent-800 dark:border-accent-800 dark:bg-accent-950/20 dark:text-accent-200">
             Checkout completed. Your subscription is being finalized.
           </div>
         )}
         {checkoutStatus === 'cancelled' && (
-          <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/20 dark:text-amber-200">
+          <div className="mt-4 rounded-lg border border-warning-200 bg-warning-50 px-4 py-3 text-sm text-warning-800 dark:border-warning-800 dark:bg-warning-950/20 dark:text-warning-200">
             Checkout was cancelled. No subscription change was applied.
           </div>
         )}
@@ -348,7 +396,7 @@ export default function SubscriptionPage() {
               {planTier !== 'enterprise' &&
                 billingPeriod === 'annual' &&
                 pricing.annualSavings && (
-                  <p className="mt-1 text-xs font-medium text-emerald-700 dark:text-emerald-400">
+                  <p className="mt-1 text-xs font-medium text-accent-700 dark:text-accent-400">
                     {pricing.annualSavings}
                   </p>
                 )}
@@ -427,6 +475,14 @@ export default function SubscriptionPage() {
                         checkoutResult.mode === 'redirect' &&
                         checkoutResult.checkoutUrl
                       ) {
+                        persistPendingCheckout({
+                          tier: planTier,
+                          billingPeriod,
+                          amount:
+                            billingPeriod === 'annual'
+                              ? getTierPricing(planTier).annualPrice
+                              : getTierPricing(planTier).monthlyPrice,
+                        });
                         window.location.href = checkoutResult.checkoutUrl;
                         return;
                       }

@@ -17,7 +17,9 @@ import {
   getAttachmentAnalyses,
   getMaintenanceEntries,
 } from '../shared/firestoreService';
-import { buildDocumentSummary } from '../utils/documentAnalysisSummary';
+import { buildDocumentSummary } from '@vehicle-vitals/shared/documentAnalysisSummary';
+import { formatCurrencyCompact } from '@vehicle-vitals/shared/currency';
+import WheelBreakdownChart from './charts/WheelBreakdownChart';
 
 // ─── types ─────────────────────────────────────────────────────────────────
 
@@ -58,6 +60,17 @@ interface AttachmentAnalysis {
   };
   confidence?: number;
   sourceText?: string;
+  // Portfolio category/item this file was filed under (e.g. 'ownership' /
+  // 'bill_of_sale'), attached client-side once fetched. Undefined when the
+  // file came from a logged Maintenance entry's attachments instead of the
+  // document portfolio — see isMaintenanceAttachment.
+  categoryKey?: string;
+  itemId?: string;
+  // True when this analysis belongs to a file attached directly to a logged
+  // Maintenance entry. That entry's cost already contributes to maintTotal
+  // via its own `cost` field, so these are excluded from cost-bucket
+  // classification below to avoid double-counting the same service twice.
+  isMaintenanceAttachment?: boolean;
 }
 
 interface VehicleInfo {
@@ -80,10 +93,7 @@ interface CostBreakdown {
 
 // ─── helpers ───────────────────────────────────────────────────────────────
 
-function formatCurrency(n: number): string {
-  if (n >= 1000) return `$${(n / 1000).toFixed(1)}k`;
-  return `$${n.toFixed(0)}`;
-}
+const formatCurrency = formatCurrencyCompact;
 
 function monthsBetween(dateA: string, dateB: string): number {
   const a = new Date(dateA);
@@ -114,38 +124,60 @@ export default function CostAnalysisReportlet({ vehicle }: Props) {
       try {
         const maint = (await getMaintenanceEntries(vehicle.vin)) ?? [];
 
-        // Collect storage paths from both document portfolio files and maintenance attachments.
-        const portfolioPaths = (
+        // Collect storage paths from both document portfolio files and
+        // maintenance attachments, keeping track of which portfolio
+        // category/item each portfolio file was actually filed under — the
+        // authoritative signal for what a document is FOR (a Bill of Sale
+        // filed under Ownership vs. a receipt filed under Maintenance),
+        // rather than guessing from keywords in the storage path/filename.
+        const portfolioMeta = new Map<
+          string,
+          { categoryKey?: string; itemId?: string }
+        >();
+        (
           (vehicle.documentPortfolio?.categories ?? []) as Array<{
+            key?: string;
             items?: Array<{
+              id?: string;
               files?: Array<{ path?: string; url?: string }>;
             }>;
           }>
-        ).flatMap(cat =>
-          (cat.items ?? []).flatMap(item =>
-            (item.files ?? []).flatMap(file => {
-              if (file.path) return [file.path];
-              if (file.url) return [file.url];
-              return [];
-            })
-          )
-        );
+        ).forEach(cat => {
+          (cat.items ?? []).forEach(item => {
+            (item.files ?? []).forEach(file => {
+              const path = file.path || file.url;
+              if (path) {
+                portfolioMeta.set(path, { categoryKey: cat.key, itemId: item.id });
+              }
+            });
+          });
+        });
 
-        const maintenancePaths = maint.flatMap(entry =>
-          (entry.attachments ?? []).flatMap(attachment => {
-            if (attachment.path) return [attachment.path];
-            if (attachment.url) return [attachment.url];
-            return [];
-          })
-        );
+        const maintenancePaths = new Set<string>();
+        maint.forEach(entry => {
+          (entry.attachments ?? []).forEach(attachment => {
+            const path = attachment.path || attachment.url;
+            if (path) maintenancePaths.add(path);
+          });
+        });
 
         const allPaths = Array.from(
-          new Set([...portfolioPaths, ...maintenancePaths])
+          new Set([...portfolioMeta.keys(), ...maintenancePaths])
         );
 
         let fetchedAnalyses: AttachmentAnalysis[] = [];
         if (allPaths.length > 0) {
-          fetchedAnalyses = await getAttachmentAnalyses(vehicle.vin, allPaths);
+          const raw = await getAttachmentAnalyses(vehicle.vin, allPaths);
+          fetchedAnalyses = raw.map(a => {
+            const path = a.storagePath || a.path || a.url || '';
+            const meta = portfolioMeta.get(path);
+            return {
+              ...a,
+              categoryKey: meta?.categoryKey,
+              itemId: meta?.itemId,
+              isMaintenanceAttachment: !meta && maintenancePaths.has(path),
+            };
+          });
         }
 
         if (!cancelled) {
@@ -176,63 +208,118 @@ export default function CostAnalysisReportlet({ vehicle }: Props) {
   let inspectionTotal = 0;
   let registrationTotal = 0;
 
-  for (const a of analyses) {
-    const cost = a.extracted?.totalCost ?? 0;
-    const cat = a.extracted?.documentCategory ?? '';
-    const type = a.extracted?.serviceType?.toLowerCase() ?? '';
-    const filePath = a.storagePath ?? '';
+  let nonUsdSkipped = 0;
 
-    if (filePath.includes('bill_of_sale') || type.includes('bill')) {
-      purchasePrice = Math.max(purchasePrice, cost);
-    } else if (
-      filePath.includes('insurance') ||
-      filePath.includes('insurance_card')
-    ) {
-      insuranceAnnual = Math.max(insuranceAnnual, cost);
-    } else if (filePath.includes('loan') || filePath.includes('payment')) {
-      if (cost > 0 && cost < 2000) loanMonthly = Math.max(loanMonthly, cost);
-    } else if (filePath.includes('fuel')) {
-      fuelTotal += cost;
-    } else if (filePath.includes('inspection')) {
-      inspectionTotal += cost;
-    } else if (filePath.includes('registration')) {
-      registrationTotal += cost;
-    } else if (cat === 'invoice' || cat === 'receipt') {
-      // Falls through to maintenance total already counted
+  for (const a of analyses) {
+    // Files attached to a logged Maintenance entry already contribute to
+    // maintTotal via that entry's own `cost` field — classifying them too
+    // would double-count the same service.
+    if (a.isMaintenanceAttachment) continue;
+
+    const cost = a.extracted?.totalCost ?? 0;
+    if (!(cost > 0)) continue;
+
+    // This app doesn't do currency conversion — summing a non-USD amount
+    // as if it were USD would silently misstate every total it touches.
+    // Better to exclude it (and say so) than pretend a mixed-currency sum
+    // is meaningful.
+    const currency = a.extracted?.currency;
+    if (currency && currency !== 'USD') {
+      nonUsdSkipped += 1;
+      continue;
+    }
+
+    // Classify by the portfolio item the user actually filed the document
+    // under, not by guessing from the storage path/filename — a keyword
+    // guess is exactly the bug class that inflated another total in this
+    // app by $100,000+ (see ownershipInsights.ts).
+    switch (a.itemId) {
+      case 'bill_of_sale':
+        purchasePrice = Math.max(purchasePrice, cost);
+        break;
+      case 'insurance':
+        insuranceAnnual = Math.max(insuranceAnnual, cost);
+        break;
+      case 'loan_or_lease':
+      case 'payment_history':
+        if (cost < 2000) loanMonthly = Math.max(loanMonthly, cost);
+        break;
+      case 'registration':
+      case 'tax_receipts':
+        registrationTotal += cost;
+        break;
+      case 'inspection_reports':
+        inspectionTotal += cost;
+        break;
+      default:
+        // title, warranty_records, service_history/repair_invoices (already
+        // reflected via Records' Ownership Insights maintenance spend),
+        // reference docs, or a file outside the standard portfolio — not
+        // part of this cost breakdown.
+        break;
     }
   }
 
-  // Elapsed months since purchase
+  // Elapsed months since purchase. Previously defaulted to a fabricated 24
+  // when purchaseDate was missing — now null, so financing/monthly-average
+  // figures that depend on ownership duration are omitted rather than
+  // silently built on a made-up number.
   const purchaseDate = vehicle.purchaseDate ?? '';
   const nowStr = new Date().toISOString().slice(0, 10);
-  const elapsedMonths = purchaseDate ? monthsBetween(purchaseDate, nowStr) : 24;
+  const elapsedMonths = purchaseDate
+    ? monthsBetween(purchaseDate, nowStr)
+    : null;
+  const missingPurchaseDate = !purchaseDate;
 
-  const loanPaidTotal = loanMonthly * elapsedMonths;
+  const loanPaidTotal = elapsedMonths != null ? loanMonthly * elapsedMonths : 0;
+  // Insurance is captured as a single annual premium — prorate by years
+  // owned so it contributes to a CUMULATIVE total the same way maintenance/
+  // fuel/registration do, instead of counting one year's premium as the
+  // full lifetime insurance cost regardless of how long the vehicle's been
+  // owned. Without a known ownership duration, fall back to the single
+  // premium as-is rather than guessing.
+  const insuranceCumulative =
+    elapsedMonths != null
+      ? Number(((insuranceAnnual * elapsedMonths) / 12).toFixed(2))
+      : insuranceAnnual;
   const totalCOO =
     purchasePrice +
     maintTotal +
-    insuranceAnnual +
+    insuranceCumulative +
     loanPaidTotal +
     fuelTotal +
     inspectionTotal +
     registrationTotal;
 
-  const hasData = totalCOO > 0 || maintTotal > 0;
+  // loanMonthly/insuranceAnnual are checked directly (not just via
+  // totalCOO) because a detected-but-unprorated financing payment
+  // contributes 0 to totalCOO when purchase date is unknown — that's still
+  // real data worth surfacing (with a note), not an empty state. Same for
+  // nonUsdSkipped — an excluded non-USD document is real data too, just
+  // not one this app can safely total.
+  const hasData =
+    totalCOO > 0 ||
+    maintTotal > 0 ||
+    loanMonthly > 0 ||
+    insuranceAnnual > 0 ||
+    nonUsdSkipped > 0;
 
   // ── category breakdown for bar chart ────────────────────────────────────
 
   const breakdown: CostBreakdown[] = [
-    { label: 'Purchase', amount: purchasePrice, color: 'bg-blue-500' },
-    { label: 'Financing', amount: loanPaidTotal, color: 'bg-indigo-400' },
-    { label: 'Service', amount: maintTotal, color: 'bg-emerald-500' },
-    { label: 'Insurance', amount: insuranceAnnual, color: 'bg-amber-400' },
-    { label: 'Fuel', amount: fuelTotal, color: 'bg-orange-400' },
-    { label: 'Registration', amount: registrationTotal, color: 'bg-slate-400' },
-    { label: 'Inspection', amount: inspectionTotal, color: 'bg-purple-400' },
+    { label: 'Purchase', amount: purchasePrice, color: '#3b82f6' },
+    { label: 'Financing', amount: loanPaidTotal, color: '#818cf8' },
+    { label: 'Service', amount: maintTotal, color: '#22c55e' },
+    { label: 'Insurance', amount: insuranceCumulative, color: '#f59e0b' },
+    { label: 'Fuel', amount: fuelTotal, color: '#fbbf24' },
+    { label: 'Registration', amount: registrationTotal, color: '#94a3b8' },
+    { label: 'Inspection', amount: inspectionTotal, color: '#a78bfa' },
   ].filter(c => c.amount > 0);
 
-  const maxAmount = Math.max(...breakdown.map(c => c.amount), 1);
-  const monthlyAvg = hasData ? totalCOO / elapsedMonths : 0;
+  // Can't average cost-per-month without knowing how many months the
+  // vehicle's actually been owned.
+  const monthlyAvg =
+    hasData && elapsedMonths != null ? totalCOO / elapsedMonths : null;
 
   const documentInsights = analyses
     .filter(a => a.extracted || a.sourceText)
@@ -285,47 +372,50 @@ export default function CostAnalysisReportlet({ vehicle }: Props) {
         <StatCard
           label="Total Cost of Ownership"
           value={formatCurrency(totalCOO)}
-          sub={`${elapsedMonths} months`}
+          sub={elapsedMonths != null ? `${elapsedMonths} months` : 'excl. financing'}
           accent="text-blue-600 dark:text-blue-400"
         />
         <StatCard
           label="Monthly Average"
-          value={formatCurrency(monthlyAvg)}
+          value={monthlyAvg != null ? formatCurrency(monthlyAvg) : 'Add purchase date'}
           sub="/month"
-          accent="text-emerald-600 dark:text-emerald-400"
+          accent="text-accent-600 dark:text-accent-400"
         />
         <StatCard
           label="Service Spend"
           value={formatCurrency(maintTotal)}
           sub={`${maintenance.length} record${maintenance.length !== 1 ? 's' : ''}`}
-          accent="text-amber-600 dark:text-amber-400"
+          accent="text-warning-600 dark:text-warning-400"
         />
       </div>
 
-      {/* ── cost breakdown bar chart ── */}
+      {missingPurchaseDate && (loanMonthly > 0 || insuranceAnnual > 0) && (
+        <p className="text-xs text-warning-700 dark:text-warning-400">
+          Add this vehicle's purchase date to include financing paid to date
+          and a full multi-year insurance estimate in these totals.
+        </p>
+      )}
+
+      {nonUsdSkipped > 0 && (
+        <p className="text-xs text-warning-700 dark:text-warning-400">
+          {nonUsdSkipped} document{nonUsdSkipped === 1 ? '' : 's'} in a
+          non-USD currency {nonUsdSkipped === 1 ? 'was' : 'were'} excluded
+          from these totals — this app doesn't convert currencies.
+        </p>
+      )}
+
+      {/* ── cost breakdown wheel chart ── */}
       {breakdown.length > 0 && (
         <div>
           <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-2">
             Cost Breakdown
           </p>
-          <div className="space-y-1.5">
-            {breakdown.map(b => (
-              <div key={b.label} className="flex items-center gap-2">
-                <span className="w-20 text-xs text-slate-600 dark:text-slate-400 truncate">
-                  {b.label}
-                </span>
-                <div className="flex-1 h-2 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
-                  <div
-                    className={`h-full rounded-full ${b.color}`}
-                    style={{ width: `${(b.amount / maxAmount) * 100}%` }}
-                  />
-                </div>
-                <span className="w-12 text-right text-xs font-medium text-slate-700 dark:text-slate-300">
-                  {formatCurrency(b.amount)}
-                </span>
-              </div>
-            ))}
-          </div>
+          <WheelBreakdownChart
+            segments={breakdown}
+            formatAmount={formatCurrency}
+            centerValue={formatCurrency(totalCOO)}
+            centerLabel="Total"
+          />
         </div>
       )}
 
@@ -339,7 +429,7 @@ export default function CostAnalysisReportlet({ vehicle }: Props) {
             {topMaint.map(([label, amt]) => (
               <span
                 key={label}
-                className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 rounded-full text-xs"
+                className="inline-flex items-center gap-1 px-2 py-0.5 bg-accent-50 dark:bg-accent-900/30 text-accent-700 dark:text-accent-300 rounded-full text-xs"
               >
                 {label}
                 <span className="font-semibold">{formatCurrency(amt)}</span>

@@ -16,7 +16,7 @@ vi.mock('../src/shared/fileUtils', () => ({
   formatFileDisplay: () => ({ icon: '📄' }),
 }));
 
-vi.mock('../src/utils/documentAnalysisSummary', () => ({
+vi.mock('@vehicle-vitals/shared/documentAnalysisSummary', () => ({
   buildDocumentSummary: (extracted, sourceText) =>
     extracted?.serviceType || sourceText || 'No analysis summary available yet',
 }));
@@ -108,7 +108,7 @@ describe('TimelineDashboard page', () => {
 
     await waitFor(() => {
       expect(
-        screen.getByRole('heading', { name: /maintenance timeline/i })
+        screen.getByRole('heading', { name: /^service history$/i })
       ).toBeInTheDocument();
       expect(screen.getAllByText(/oil change/i).length).toBeGreaterThan(0);
       expect(screen.getAllByText(/brake service/i).length).toBeGreaterThan(0);

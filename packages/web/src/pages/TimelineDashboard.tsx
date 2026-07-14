@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { coerceFirestoreTimestamp } from '../shared/firestoreTimestamp';
 import { formatFileDisplay } from '../shared/fileUtils';
 import { getMaintenanceEntries, getVehicles } from '../shared/firestoreService';
-import { buildDocumentSummary } from '../utils/documentAnalysisSummary';
+import { formatCurrency } from '@vehicle-vitals/shared/currency';
+import { buildDocumentSummary } from '@vehicle-vitals/shared/documentAnalysisSummary';
 
 interface Vehicle {
   vin: string;
@@ -63,7 +65,7 @@ function getAnalysisBadge(confidence: number | undefined): {
     return {
       label: 'Auto-Verified',
       className:
-        'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200',
+        'bg-accent-100 text-accent-800 dark:bg-accent-900 dark:text-accent-200',
     };
   }
 
@@ -71,7 +73,7 @@ function getAnalysisBadge(confidence: number | undefined): {
     return {
       label: 'Review Suggested',
       className:
-        'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200',
+        'bg-warning-100 text-warning-800 dark:bg-warning-900 dark:text-warning-200',
     };
   }
 
@@ -115,31 +117,17 @@ function resolveVehiclePlate(vehicle: any): string | undefined {
  */
 function resolveMaintenanceDate(entry: FirestoreMaintenanceEntry): string {
   // Priority 1: Use entry.date if it exists (the actual service date)
-  if (entry.date) {
-    // If it's a Firestore Timestamp object with toDate method
-    if (entry.date?.toDate && typeof entry.date.toDate === 'function') {
-      try {
-        return entry.date.toDate().toISOString();
-      } catch {
-        // Fall through if conversion fails
-      }
-    }
-    // If it's already an ISO string or parseable date string
-    if (typeof entry.date === 'string') {
-      const parsed = new Date(entry.date);
-      if (!isNaN(parsed.getTime())) {
-        return parsed.toISOString();
-      }
-    }
+  const dateFromEntry = entry.date
+    ? coerceFirestoreTimestamp(entry.date)
+    : null;
+  if (dateFromEntry) {
+    return dateFromEntry.toISOString();
   }
 
   // Priority 2: Fall back to createdAt timestamp
-  if (entry.createdAt?.toDate && typeof entry.createdAt.toDate === 'function') {
-    try {
-      return entry.createdAt.toDate().toISOString();
-    } catch {
-      // Fall through if conversion fails
-    }
+  const dateFromCreatedAt = coerceFirestoreTimestamp(entry.createdAt);
+  if (dateFromCreatedAt) {
+    return dateFromCreatedAt.toISOString();
   }
 
   // Priority 3: Last resort - use current time (should not happen in practice)
@@ -374,7 +362,7 @@ export default function TimelineDashboard() {
       <div className="flex items-start justify-between gap-4 mb-6">
         <div>
           <h1 className="font-serif font-bold text-3xl text-slate-900 dark:text-slate-100 m-0">
-            Maintenance Timeline
+            Service History
           </h1>
           <p className="text-slate-600 dark:text-slate-400 mt-2 mb-0">
             Review completed work across the garage in reverse chronological
@@ -383,10 +371,10 @@ export default function TimelineDashboard() {
         </div>
       </div>
 
-      <section className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        <div className="lg:col-span-4 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4">
+      <section className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:items-start">
+        <div className="lg:col-span-4 lg:sticky lg:top-4 max-h-[calc(100dvh-6rem)] overflow-y-auto bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4">
           <h2 className="font-semibold text-lg text-slate-900 dark:text-slate-100 mt-0 mb-4">
-            Timeline Summary
+            Service History Summary
           </h2>
 
           <div className="space-y-3 mb-4">
@@ -506,8 +494,8 @@ export default function TimelineDashboard() {
                 {lowConfidenceCount} need review
               </p>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 mb-0">
-                Extracted document costs: $
-                {extractedDocumentCostTotal.toFixed(2)}
+                Extracted document costs:{' '}
+                {formatCurrency(extractedDocumentCostTotal)}
               </p>
               {topDocumentCategories.length > 0 && (
                 <div className="mt-2 flex flex-wrap gap-1.5">
@@ -526,7 +514,7 @@ export default function TimelineDashboard() {
           </div>
         </div>
 
-        <div className="lg:col-span-8 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4">
+        <div className="lg:col-span-8 lg:sticky lg:top-4 max-h-[calc(100dvh-6rem)] overflow-y-auto bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4">
           {recentDocumentInsights.length > 0 && (
             <div className="mb-4 rounded-lg border border-slate-200 dark:border-slate-700 p-3">
               <h3 className="font-semibold text-sm text-slate-900 dark:text-slate-100 mt-0 mb-2">
@@ -563,7 +551,7 @@ export default function TimelineDashboard() {
             </div>
           ) : (
             <div className="relative">
-              <div className="absolute left-8 top-0 bottom-0 w-0.5 bg-slate-300 dark:bg-slate-600"></div>
+              <div className="absolute left-24 top-0 bottom-0 w-0.5 bg-slate-300 dark:bg-slate-600"></div>
 
               <div className="space-y-8">
                 {filteredEntries.map((entry, index) => (
@@ -571,9 +559,13 @@ export default function TimelineDashboard() {
                     key={entry.id || index}
                     className="relative flex items-start"
                   >
-                    <div className="flex-shrink-0 w-4 h-4 bg-slate-500 dark:bg-slate-400 rounded-full mt-6 ml-6 border-4 border-white dark:border-slate-800"></div>
+                    <div className="w-20 shrink-0 pt-6 pr-2 text-right text-xs font-medium text-slate-500 dark:text-slate-400">
+                      {new Date(entry.date).toLocaleDateString()}
+                    </div>
 
-                    <div className="ml-12 flex-1">
+                    <div className="shrink-0 w-4 h-4 bg-slate-500 dark:bg-slate-400 rounded-full mt-6 ml-2 border-4 border-white dark:border-slate-800"></div>
+
+                    <div className="ml-8 flex-1">
                       <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-6 border border-slate-200 dark:border-slate-700">
                         <div className="flex justify-between items-start mb-3 gap-4">
                           <div>
@@ -590,10 +582,9 @@ export default function TimelineDashboard() {
                           </div>
                           <div className="text-right">
                             <div className="text-lg font-semibold text-slate-900 dark:text-slate-100">
-                              ${(entry as MaintenanceEntry).cost || '0.00'}
-                            </div>
-                            <div className="text-sm text-slate-500 dark:text-slate-400">
-                              {new Date(entry.date).toLocaleDateString()}
+                              {formatCurrency(
+                                Number((entry as MaintenanceEntry).cost) || 0
+                              )}
                             </div>
                           </div>
                         </div>

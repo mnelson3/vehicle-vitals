@@ -81,6 +81,68 @@ test.describe('Vehicle Vitals - User Acceptance Testing', () => {
     }
   };
 
+  // Adds a vehicle via the real Add Vehicle form and returns its VIN, or null
+  // if the flow could not complete (gated deployment target, tier limit
+  // already reached from a prior run against this shared test account, etc).
+  // Used by tests that need at least one vehicle to exist to exercise Home's
+  // health banner/badges or a vehicle's Records page.
+  let vehicleCounter = 0;
+  const addTestVehicle = async (
+    page: import('@playwright/test').Page
+  ): Promise<string | null> => {
+    vehicleCounter += 1;
+    const vin = `UATVEH${Date.now()}${vehicleCounter}`
+      .slice(0, 17)
+      .toUpperCase();
+
+    await page.goto(`${BASE_URL}/app/add-vehicle`);
+
+    const vinField = page.locator('#vin');
+    if (!(await vinField.isVisible().catch(() => false))) {
+      return null;
+    }
+    await vinField.fill(vin);
+
+    const yearSelect = page.locator('#year');
+    if (await yearSelect.isVisible().catch(() => false)) {
+      const yearValues = await yearSelect
+        .locator('option')
+        .evaluateAll(options =>
+          options.map(option => (option as HTMLOptionElement).value)
+        );
+      const firstRealYear = yearValues.find(y => /^\d{4}$/.test(y));
+      if (firstRealYear) {
+        await yearSelect.selectOption(firstRealYear);
+      }
+    }
+
+    const makeField = page.locator('#make');
+    if (await makeField.isVisible().catch(() => false)) {
+      await makeField.fill(TEST_VEHICLE_MAKE);
+    }
+
+    const modelField = page.locator('#model');
+    if (
+      (await modelField.isVisible().catch(() => false)) &&
+      !(await modelField.isDisabled().catch(() => true))
+    ) {
+      await modelField.fill(TEST_VEHICLE_MODEL);
+    }
+
+    const submitButton = page.getByRole('button', { name: /^Add Vehicle$/ });
+    if (!(await submitButton.isVisible().catch(() => false))) {
+      return null;
+    }
+    await submitButton.click();
+
+    try {
+      await page.waitForURL(/\/app\/?(\?.*)?$/, { timeout: 15000 });
+      return vin;
+    } catch {
+      return null;
+    }
+  };
+
   // ─────────────────────────────────────────────────────────────────
   // AUTHENTICATION TESTS
   // ─────────────────────────────────────────────────────────────────
@@ -239,6 +301,82 @@ test.describe('Vehicle Vitals - User Acceptance Testing', () => {
   });
 
   // ─────────────────────────────────────────────────────────────────
+  // VEHICLE HEALTH TESTS
+  // ─────────────────────────────────────────────────────────────────
+
+  test.describe('Vehicle Health', () => {
+    test.beforeEach(async ({ page }) => {
+      const authUiAvailable = await isAuthUiAvailable(page);
+      test.skip(
+        !authUiAvailable,
+        'Vehicle Health UAT requires auth UI in this deployment target.'
+      );
+
+      await ensureAuthenticated(page);
+    });
+
+    test('TC-HEALTH-001: Home shows a Garage Health banner and a per-vehicle score badge', async ({
+      page,
+    }) => {
+      const vin = await addTestVehicle(page);
+      test.skip(
+        !vin,
+        'Could not add a test vehicle in this deployment target.'
+      );
+
+      await page.goto(`${BASE_URL}/app`);
+
+      await expect(page.getByText(/^Garage Health:/i)).toBeVisible({
+        timeout: 20000,
+      });
+      await expect(page.getByText(/Health: \d+\/100/i).first()).toBeVisible({
+        timeout: 20000,
+      });
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────
+  // RECORDS TESTS
+  // ─────────────────────────────────────────────────────────────────
+
+  test.describe('Records', () => {
+    test.beforeEach(async ({ page }) => {
+      const authUiAvailable = await isAuthUiAvailable(page);
+      test.skip(
+        !authUiAvailable,
+        'Records UAT requires auth UI in this deployment target.'
+      );
+
+      await ensureAuthenticated(page);
+    });
+
+    test('TC-INSIGHTS-001: Ownership Insights section is collapsed by default and expands on click', async ({
+      page,
+    }) => {
+      const vin = await addTestVehicle(page);
+      test.skip(
+        !vin,
+        'Could not add a test vehicle in this deployment target.'
+      );
+
+      await page.goto(`${BASE_URL}/app/records/${vin}`);
+
+      const insightsToggle = page.getByRole('button', {
+        name: /ownership insights/i,
+      });
+      test.skip(
+        !(await insightsToggle.isVisible().catch(() => false)),
+        'Ownership Insights section is not visible in this deployment target.'
+      );
+
+      await expect(insightsToggle).toHaveAttribute('aria-expanded', 'false');
+
+      await insightsToggle.click();
+      await expect(insightsToggle).toHaveAttribute('aria-expanded', 'true');
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────
   // UI/UX TESTS
   // ─────────────────────────────────────────────────────────────────
 
@@ -268,11 +406,13 @@ test.describe('Vehicle Vitals - User Acceptance Testing', () => {
           hasHelpHowTo: marketingLinks.includes('Help & How-To'),
           hasGettingStarted: marketingLinks.includes('Getting Started'),
           hasVinLookup: marketingLinks.includes('VIN Lookup'),
-          hasOwners: marketingLinks.includes('For Owners'),
-          hasHouseholds: marketingLinks.includes('For Households'),
-          hasNewDrivers: marketingLinks.includes('New Drivers'),
-          hasDiy: marketingLinks.includes('DIY'),
-          hasLightFleets: marketingLinks.includes('Light Fleets'),
+          hasOwnershipRecords: marketingLinks.includes('Ownership Records'),
+          hasSharedGarage: marketingLinks.includes('Shared Garage'),
+          hasGuidedSetup: marketingLinks.includes('Guided Setup'),
+          hasHandsOnMaintenance: marketingLinks.includes(
+            'Hands-On Maintenance'
+          ),
+          hasWorkVehicles: marketingLinks.includes('Work Vehicles'),
           hasPricing: marketingLinks.includes('Pricing'),
           hasProductTour: marketingLinks.includes('Product Tour'),
         };
@@ -289,18 +429,20 @@ test.describe('Vehicle Vitals - User Acceptance Testing', () => {
         'Deployment target is still on legacy marketing navigation labels.'
       );
 
-      expect(marketingNavMetrics.firstLink).toBe('For Owners');
+      expect(marketingNavMetrics.firstLink).toBe('Ownership Records');
       expect(marketingNavMetrics.hasProductOverview).toBe(false);
       expect(marketingNavMetrics.hasHelpHowTo).toBe(false);
       expect(marketingNavMetrics.hasGettingStarted).toBe(false);
       expect(marketingNavMetrics.hasVinLookup).toBe(false);
-      expect(marketingNavMetrics.hasOwners).toBe(true);
-      expect(marketingNavMetrics.hasHouseholds).toBe(true);
-      expect(marketingNavMetrics.hasNewDrivers).toBe(true);
-      expect(marketingNavMetrics.hasDiy).toBe(true);
-      expect(marketingNavMetrics.hasLightFleets).toBe(true);
-      expect(marketingNavMetrics.hasPricing).toBe(true);
-      expect(marketingNavMetrics.hasProductTour).toBe(true);
+      expect(marketingNavMetrics.hasOwnershipRecords).toBe(true);
+      expect(marketingNavMetrics.hasSharedGarage).toBe(true);
+      expect(marketingNavMetrics.hasGuidedSetup).toBe(true);
+      expect(marketingNavMetrics.hasHandsOnMaintenance).toBe(true);
+      expect(marketingNavMetrics.hasWorkVehicles).toBe(true);
+      // Pricing/Product Tour live in the footer and authenticated header,
+      // not the logged-out persona nav row this test inspects.
+      expect(marketingNavMetrics.hasPricing).toBe(false);
+      expect(marketingNavMetrics.hasProductTour).toBe(false);
     });
 
     test('TC-UI-011: Authenticated app header hides Product Overview and Help context links', async ({
@@ -392,7 +534,7 @@ test.describe('Vehicle Vitals - User Acceptance Testing', () => {
       expect(shellMetrics.sponsoredInsideMain).toBe(false);
     });
 
-    test('TC-UI-007: Marketing media sections are moved to dedicated pages', async ({
+    test('TC-UI-007: Marketing media sections consolidate into Getting Started and Product Tour', async ({
       page,
     }) => {
       await page.goto(BASE_URL);
@@ -414,36 +556,21 @@ test.describe('Vehicle Vitals - User Acceptance Testing', () => {
           Array.from(document.querySelectorAll('h1, h2, h3')).find(node =>
             node.textContent?.includes('Product proof for the story')
           ) !== undefined;
-        const hasStepsLink =
+        const hasGettingStartedLink =
           Array.from(document.querySelectorAll('a')).find(link =>
-            link.getAttribute('href')?.includes('/start-steps')
+            link.getAttribute('href')?.includes('/getting-started')
           ) !== undefined;
-        const hasScreensLink =
+        const hasProductTourLink =
           Array.from(document.querySelectorAll('a')).find(link =>
-            link.getAttribute('href')?.includes('/everyday-screens')
-          ) !== undefined;
-        const hasVideosLink =
-          Array.from(document.querySelectorAll('a')).find(link =>
-            link.getAttribute('href')?.includes('/short-video-tours')
-          ) !== undefined;
-        const hasScreensHeadingOnLanding =
-          Array.from(document.querySelectorAll('h1, h2, h3')).find(node =>
-            node.textContent?.includes('Everyday screens you will use')
-          ) !== undefined;
-        const hasShortVideosHeadingOnLanding =
-          Array.from(document.querySelectorAll('h1, h2, h3')).find(node =>
-            node.textContent?.includes('Short video tours')
+            link.getAttribute('href')?.includes('/product-tour')
           ) !== undefined;
 
         return {
           hasPersonaHeading,
           hasPlanHeading,
           hasProofHeading,
-          hasStepsLink,
-          hasScreensLink,
-          hasVideosLink,
-          hasScreensHeadingOnLanding,
-          hasShortVideosHeadingOnLanding,
+          hasGettingStartedLink,
+          hasProductTourLink,
         };
       });
 
@@ -454,18 +581,17 @@ test.describe('Vehicle Vitals - User Acceptance Testing', () => {
 
       expect(landingMediaMetrics.hasPlanHeading).toBe(true);
       expect(landingMediaMetrics.hasProofHeading).toBe(true);
-      expect(landingMediaMetrics.hasStepsLink).toBe(true);
-      expect(landingMediaMetrics.hasScreensLink).toBe(true);
-      expect(landingMediaMetrics.hasVideosLink).toBe(true);
-      expect(landingMediaMetrics.hasScreensHeadingOnLanding).toBe(false);
-      expect(landingMediaMetrics.hasShortVideosHeadingOnLanding).toBe(false);
+      expect(landingMediaMetrics.hasGettingStartedLink).toBe(true);
+      expect(landingMediaMetrics.hasProductTourLink).toBe(true);
 
+      // Legacy URLs redirect (replace semantics) to their canonical pages.
       await page.goto(`${BASE_URL}/start-steps`);
+      await expect(page).toHaveURL(`${BASE_URL}/getting-started`);
 
-      const startStepsPageMetrics = await page.evaluate(() => {
-        const hasStartStepsHeading =
-          Array.from(document.querySelectorAll('h1, h2, h3')).find(node =>
-            node.textContent?.includes('Start in 3 simple steps')
+      const gettingStartedPageMetrics = await page.evaluate(() => {
+        const hasGettingStartedHeading =
+          Array.from(document.querySelectorAll('h1')).find(node =>
+            node.textContent?.includes('Getting Started')
           ) !== undefined;
         const stepCards = Array.from(
           document.querySelectorAll('article')
@@ -478,44 +604,33 @@ test.describe('Vehicle Vitals - User Acceptance Testing', () => {
         const reminderLink = Array.from(document.querySelectorAll('a')).find(
           link => link.textContent?.includes('See reminders demo')
         );
+        const hasShopsAndServicesStep =
+          Array.from(document.querySelectorAll('a')).find(
+            link => link.getAttribute('href') === '/app/providers'
+          ) !== undefined;
 
         return {
-          hasStartStepsHeading,
+          hasGettingStartedHeading,
           stepCards,
           reminderHref: reminderLink?.getAttribute('href'),
+          hasShopsAndServicesStep,
         };
       });
 
       await page.goto(`${BASE_URL}/everyday-screens`);
-
-      const screensPageMetrics = await page.evaluate(() => {
-        const hasScreensHeading =
-          Array.from(document.querySelectorAll('h1, h2, h3')).find(node =>
-            node.textContent?.includes('Everyday screens you will use')
-          ) !== undefined;
-        const screenshotCards = document.querySelectorAll(
-          'section article img[alt*="application screenshot"]'
-        ).length;
-        const publicDemoLinks = Array.from(document.querySelectorAll('a'))
-          .filter(link =>
-            link.textContent?.includes('Open the public demo for')
-          )
-          .map(link => link.getAttribute('href'));
-
-        return {
-          hasScreensHeading,
-          screenshotCards,
-          publicDemoLinks,
-        };
-      });
+      await expect(page).toHaveURL(`${BASE_URL}/product-tour`);
 
       await page.goto(`${BASE_URL}/short-video-tours`);
+      await expect(page).toHaveURL(`${BASE_URL}/product-tour`);
 
-      const videosPageMetrics = await page.evaluate(() => {
-        const hasShortVideosHeading =
-          Array.from(document.querySelectorAll('h1, h2, h3')).find(node =>
-            node.textContent?.includes('Short video tours')
+      const productTourPageMetrics = await page.evaluate(() => {
+        const hasProductTourHeading =
+          Array.from(document.querySelectorAll('h1')).find(node =>
+            node.textContent?.includes('Product Tour')
           ) !== undefined;
+        const screenshotCards = document.querySelectorAll(
+          'section article img[alt*="product screen"]'
+        ).length;
         const videoCards = Array.from(
           document.querySelectorAll('article')
         ).filter(
@@ -531,34 +646,35 @@ test.describe('Vehicle Vitals - User Acceptance Testing', () => {
             node.textContent?.includes('Playable demo') ||
             node.textContent?.includes('Poster preview')
         ).length;
+        const hasMergedEverydayScreens =
+          Array.from(document.querySelectorAll('h3')).find(
+            node =>
+              node.textContent?.includes('Vehicle details') ||
+              node.textContent?.includes('Add vehicle screen')
+          ) !== undefined;
 
         return {
-          hasShortVideosHeading,
+          hasProductTourHeading,
+          screenshotCards,
           videoCards,
           playableOrPosterLabels,
+          hasMergedEverydayScreens,
         };
       });
 
-      expect(screensPageMetrics.hasScreensHeading).toBe(true);
-      expect(screensPageMetrics.screenshotCards).toBeGreaterThanOrEqual(6);
-      expect(screensPageMetrics.publicDemoLinks).toEqual(
-        expect.arrayContaining([
-          '/cross-platform-access-demo',
-          '/ownership-history-demo',
-          '/vin-lookup-demo',
-          '/maintenance-planning-demo',
-        ])
-      );
-      expect(videosPageMetrics.hasShortVideosHeading).toBe(true);
-      expect(videosPageMetrics.videoCards).toBeGreaterThanOrEqual(3);
-      expect(videosPageMetrics.playableOrPosterLabels).toBeGreaterThanOrEqual(
-        3
-      );
-      expect(startStepsPageMetrics.hasStartStepsHeading).toBe(true);
-      expect(startStepsPageMetrics.stepCards).toBeGreaterThanOrEqual(3);
-      expect(startStepsPageMetrics.reminderHref).toBe(
+      expect(productTourPageMetrics.hasProductTourHeading).toBe(true);
+      expect(productTourPageMetrics.screenshotCards).toBeGreaterThanOrEqual(8);
+      expect(productTourPageMetrics.hasMergedEverydayScreens).toBe(true);
+      expect(productTourPageMetrics.videoCards).toBeGreaterThanOrEqual(3);
+      expect(
+        productTourPageMetrics.playableOrPosterLabels
+      ).toBeGreaterThanOrEqual(3);
+      expect(gettingStartedPageMetrics.hasGettingStartedHeading).toBe(true);
+      expect(gettingStartedPageMetrics.stepCards).toBeGreaterThanOrEqual(3);
+      expect(gettingStartedPageMetrics.reminderHref).toBe(
         '/help#maintenance-history-and-reminders'
       );
+      expect(gettingStartedPageMetrics.hasShopsAndServicesStep).toBe(true);
     });
 
     test('TC-UI-008: Help clearly separates product overview from how-to guidance', async ({
@@ -710,14 +826,13 @@ test.describe('Vehicle Vitals - User Acceptance Testing', () => {
         'Marketing header is not directly visible in this deployment target.'
       );
 
+      // Logged-out header shows persona nav (not Pricing/Product Tour —
+      // those live in the footer and authenticated header, not here).
       await expect(
-        header.getByRole('link', { name: /For Owners/i })
+        header.getByRole('link', { name: /Ownership Records/i })
       ).toBeVisible();
       await expect(
-        header.getByRole('link', { name: /Pricing/i })
-      ).toBeVisible();
-      await expect(
-        header.getByRole('link', { name: /Product Tour/i })
+        header.getByRole('link', { name: /Shared Garage/i })
       ).toBeVisible();
 
       await expect(
@@ -762,10 +877,10 @@ test.describe('Vehicle Vitals - User Acceptance Testing', () => {
         header.getByRole('link', { name: /^Garage$/i })
       ).toBeVisible();
       await expect(
-        header.getByRole('link', { name: /^Timeline$/i })
+        header.getByRole('link', { name: /^Service History$/i })
       ).toBeVisible();
       await expect(
-        header.getByRole('link', { name: /^Upcoming$/i })
+        header.getByRole('link', { name: /^Maintenance Plan$/i })
       ).toBeVisible();
 
       const hasLegacyContextLinks =
@@ -917,12 +1032,13 @@ test.describe('Vehicle Vitals - User Acceptance Testing', () => {
         page.getByRole('heading', { name: /^profile$/i })
       ).toBeVisible({ timeout: 15000 });
 
+      // Account & Security (selected inline in the Profile detail panel)
+      // exposes the signed-in user's UID, which the consolidation
+      // self-merge guard below needs.
+      await page.getByRole('button', { name: /account & security/i }).click();
       await expect(
-        page.getByRole('heading', { name: /account consolidation/i })
+        page.getByRole('heading', { name: /^account & security$/i })
       ).toBeVisible({ timeout: 15000 });
-      await expect(page.getByLabel(/source account uid/i)).toBeVisible({
-        timeout: 15000,
-      });
 
       const currentUid = await page.evaluate(() => {
         const cards = Array.from(document.querySelectorAll('div'));
@@ -936,9 +1052,20 @@ test.describe('Vehicle Vitals - User Acceptance Testing', () => {
         return '';
       });
 
+      await page
+        .getByRole('button', { name: /merge & share garage/i })
+        .click();
+
+      await expect(
+        page.getByRole('heading', { name: /account consolidation/i })
+      ).toBeVisible({ timeout: 15000 });
+      await expect(page.getByLabel(/source account uid/i)).toBeVisible({
+        timeout: 15000,
+      });
+
       test.skip(
         !currentUid,
-        'Current user UID is not visible on the profile page.'
+        'Current user UID is not visible on the account security page.'
       );
 
       await page.getByLabel(/source account uid/i).fill(currentUid);
@@ -949,6 +1076,46 @@ test.describe('Vehicle Vitals - User Acceptance Testing', () => {
       await expect(
         page.getByText(/cannot consolidate an account with itself/i)
       ).toBeVisible();
+    });
+
+    test('TC-PROFILE-003: Profile menu selections populate the detail panel inline', async ({
+      page,
+    }) => {
+      const destinations: Array<{
+        link: RegExp;
+        heading: RegExp;
+      }> = [
+        {
+          link: /^account & security/i,
+          heading: /^account & security$/i,
+        },
+        {
+          link: /^maintenance alerts/i,
+          heading: /^maintenance alerts$/i,
+        },
+        {
+          link: /^merge & share garage/i,
+          heading: /^merge & share garage$/i,
+        },
+        {
+          link: /^data & privacy/i,
+          heading: /^data & privacy$/i,
+        },
+      ];
+
+      await page.goto(`${BASE_URL}/app/profile`);
+      await page.waitForURL(/\/app\/profile/, { timeout: 15000 });
+
+      for (const destination of destinations) {
+        await page.getByRole('button', { name: destination.link }).click();
+        await expect(
+          page.getByRole('heading', { name: destination.heading })
+        ).toBeVisible({ timeout: 15000 });
+
+        // Selecting a section populates the detail panel in place -- it
+        // must never navigate away from the Profile hub.
+        await expect(page).toHaveURL(/\/app\/profile$/);
+      }
     });
   });
 
